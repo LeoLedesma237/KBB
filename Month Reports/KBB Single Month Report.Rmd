@@ -1,0 +1,270 @@
+---
+title: "KBB Single Month Report"
+output: html_document
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+
+```{r loading in the packages, warning = FALSE, echo = F}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+```
+
+
+```{r Enter month and year, echo = FALSE}
+# Enter a value for both (Numeric)
+Month = 7
+Year = 2024   
+
+# Calculate values for next month
+if(Month == 12) {
+  
+  Month = "12"
+  End.Month = "01"
+  End.Year = paste(Year + 1)
+  Year = paste(Year)
+  
+} else if (Month < 10) {
+  
+  End.Month = paste("0",Month + 1,sep="")
+  End.Year = Year
+  Month = paste("0",Month,sep="")
+  Year = paste(Year)
+  
+} else {
+  
+  End.Month = paste("0",Month + 1,sep="")
+  End.Year = Year
+  Month = paste(Month)
+  Year = paste(Year)
+  
+}
+
+```
+
+
+```{r load in the data, echo = F, warning = FALSE}
+# Set the working directory
+setwd("~/KBB_new_2")
+
+# Load the ID data
+Comprehensive.Screener.data <- read_excel("Comprehensive Screener Scoring.xlsx")
+
+# Set the working directory
+setwd("~/KBB_new_2/1_screener/final_data")
+
+# Load in the binded data
+Binded.data <- read_excel("All Children.xlsx")
+
+# Keep variables of interest
+Binded.data2 <- Binded.data %>%
+  select(Child_ID, KBB_CFM_DD_type) %>%
+  mutate(KBB_CFM_DD_status = ifelse(is.na(KBB_CFM_DD_type),"No","Yes"))
+
+# Merge the datasets together
+Comprehensive.Screener.data <- Comprehensive.Screener.data %>%
+  left_join(Binded.data2, by = "Child_ID")
+         
+```
+
+```{r Filter the data by the dates chosen, echo = FALSE}
+start.date = paste(Year,"-",Month,"-01",sep="")
+end.date = paste(End.Year,"-",End.Month,"-01",sep="")
+
+# Filter by start and end date (encompasses a whole month)
+Comprehensive.Screener.data <- Comprehensive.Screener.data %>%
+  filter(between(Date_of_Evaluation,
+                 start.date, 
+                 end.date))
+
+```
+
+
+### Overview
+
+```{r asdsad, results='asis',echo = FALSE}
+
+cat("This report was created on ",paste(Sys.Date()),".\n\n", sep ="")
+
+cat("This report is for the month of ", Month, ",",Year,".\n\n", sep="")
+
+cat("The most recent CFM screener was collected on ",last(sort(Comprehensive.Screener.data$Date_of_Evaluation)),".\n\n",sep="") 
+```
+
+
+```{r Nesting and mapping by overall summary, echo = FALSE, warning = F}
+# Nest the data by Overall.Summary
+Comprehensive.Screener.data.nested <- Comprehensive.Screener.data %>%
+  group_by(Overall.Summary) %>%
+  nest()
+
+# Obtain the following information for each group
+Comprehensive.Screener.data.nested.summary <- Comprehensive.Screener.data.nested %>%
+  mutate(n = map(.x = data, .f = nrow),
+         noDD = map(.x = data, .f = ~sum(.x$KBB_DD_status == "No")),
+         DD = map(.x = data, .f = ~sum(.x$KBB_DD_status == "Yes")),
+         `DD(%)` = round(unlist(DD)/(unlist(DD) + unlist(noDD))*100,1),
+         Epilepsy = map(.x = data, .f = ~sum(.x$Epilepsy == "Yes")),
+         No.Epilepsy = map(.x = data, .f = ~sum(.x$Epilepsy == "No")),
+         `Epilepsy(%)` = round(unlist(Epilepsy)/(unlist(Epilepsy) + unlist(No.Epilepsy))*100,1),
+         Male =  map(.x = data, .f = ~sum(.x$Child_Gender == "male")),
+         Female = map(.x = data, .f = ~sum(.x$Child_Gender == "female")),
+         `Male(%)` = round(unlist(Male)/(unlist(Female) + unlist(Male))*100,1))
+
+Comprehensive.Screener.unnested <- Comprehensive.Screener.data.nested.summary %>%
+  select(-data) %>%
+  unnest() 
+
+```
+
+
+```{r creating errors and non errors dataframes, echo = F}
+# Save errors separately
+errors.vector <- c("Incorrect Screener",
+                   "Recruited With Incorrect Screener",
+                   "Control for Incorrect Screener",
+                   "Should have been Excluded",
+                   "Control for Excluded Child") 
+
+errors.df <- Comprehensive.Screener.unnested %>%
+  filter(Overall.Summary %in% errors.vector) %>%
+  select(-c(No.Epilepsy,Female))
+
+errors.df <- errors.df[match(errors.vector,errors.df$Overall.Summary),]
+
+errors.df <- errors.df %>%
+  mutate(Overall.Summary = paste(Overall.Summary," (n=",n,")",sep="")) %>%
+  select(-n)
+
+
+# Save the non errors portion
+report.vector <- c("Excluded Children",
+                   "No Matches Within HOH",
+                   "Manual: Unable to Match",
+                   "Manual: Matched Half-Siblings",
+                   "Manual: Matched Siblings")
+
+report.df <- Comprehensive.Screener.unnested %>%
+  filter(Overall.Summary %in% report.vector) %>%
+  select(-c(No.Epilepsy,Female))
+
+report.df <- report.df[match(report.vector,report.df$Overall.Summary),]
+
+report.df <- report.df %>%
+  mutate(Overall.Summary = paste(Overall.Summary," (n=",n,")",sep="")) %>%
+  select(-n)
+```
+
+### Errors Table
+
+The table below describes the number of errors in data collection so far. These children are **not** present in the report table. 
+
+- **Incorrect Screener**: The wrong CFM screener was used on a child. Either a child much younger than 5 years was screened with the CFM5-17 or a children much older than 4 years old was screened with the CFM2-4.
+- **Recruited With Incorrect Screener**: Number of children that were recruited and given ID with an incorrect screener. Their data will not be included in behavioral/neuroimaging analyses.
+- **Controls for Incorrect Screener**: If a proband is given an ID then so is their sibling. These are the siblings that correspond with the probands receiving the incorrect screener.
+- **Should have been Excluded**: These are proband that should have been excluded because they are either blind, deaf, or immobile. However, they were recruited and given an ID. Their data will not be included in behavioral/neuroimaging analyses.
+- **Control for Excluded Children**: If a proband is given an ID then so is their sibling. These are the siblings that correspond with the probands that should have been excluded.
+```{r print out the error table, echo = FALSE}
+errors.df %>% 
+  kbl() %>%
+  kable_paper(full_width = F)
+
+```
+
+These errors occurred before code was created to identify the children and prevent them from being recruited. This code is now active thus only the 'Incorrect Screener' number should change from now on. 
+
+### Report Table
+
+The numbers reported in this table and those above are **mutually exclusive**. No child in one group will be present in another, this is both true across these two datasets and within them (This applies for the groups expressed in 'Overall.Summary'. 
+
+- **Excluded Chidren**: A proband who has "Cannot at all" reported for seeing, hearing, or walking. A non-DD sibling with at least "some difficulty" in any of these domains. 
+- **No Matches Within HOH**: All the children that were in a household with all DD or all noDD, thus there was no way to match between siblings.
+- **Manual: Unable to Match**: Children within a household that potentially was a DD and nonDD pair, however, they were not recruited. Either due to not having another pair available in the household (Ex: 1 DD and 3 noDD siblings) or because two non-related children are living in the same HOH.
+- **Manual: Matched Half-Siblings**: Children that we can recruit into the study if we struggle to find full sibling pairs (none have been given an ID yet).
+- **Manual: Matched Siblings**: Current DD and noDD sibling pairs that have been recruited.
+
+
+
+
+```{r print our the main table, echo = FALSE}
+report.df %>% 
+  kbl() %>%
+  kable_paper(full_width = F)
+
+```
+
+### Correct Screener Compiled
+
+- These are all the numbers so far not including:
+- a) 'Incorrect Screener'
+- b) 'Recruited With Incorrect Screener'
+
+```{r create a table for a correct compiled screener, echo = FALSE, warning = FALSE}
+incorrect.vector <- c("Incorrect Screener",
+                      "Recruited With Incorrect Screener")
+
+Correct.Comprehensive.Screener.data <- Comprehensive.Screener.data %>%
+  filter(!(Overall.Summary %in% incorrect.vector))
+
+Correct.Comprehensive.Screener.data.nested <- nest(Correct.Comprehensive.Screener.data)
+
+Correct.Comprehensive.Screener.data.nested.summary <- Correct.Comprehensive.Screener.data.nested %>%
+  mutate(n = map(.x = data, .f = nrow),
+         noDD = map(.x = data, .f = ~sum(.x$KBB_DD_status == "No")),
+         DD = map(.x = data, .f = ~sum(.x$KBB_DD_status == "Yes")),
+         `DD(%)` = round(unlist(DD)/(unlist(DD) + unlist(noDD))*100,1),
+         Epilepsy = map(.x = data, .f = ~sum(.x$Epilepsy == "Yes")),
+         No.Epilepsy = map(.x = data, .f = ~sum(.x$Epilepsy == "No")),
+         `Epilepsy(%)` = round(unlist(Epilepsy)/(unlist(Epilepsy) + unlist(No.Epilepsy))*100,1),
+         Male =  map(.x = data, .f = ~sum(.x$Child_Gender == "male")),
+         Female = map(.x = data, .f = ~sum(.x$Child_Gender == "female")),
+         `Male(%)` = round(unlist(Male)/(unlist(Female) + unlist(Male))*100,1))
+
+Correct.Comprehensive.Screener.unnested <- Correct.Comprehensive.Screener.data.nested.summary %>%
+  select(-data) %>%
+  unnest()
+
+Comprehensive.Screener.df <- Correct.Comprehensive.Screener.unnested %>%
+  select(-c(No.Epilepsy, Female))
+
+# Print the Table
+Comprehensive.Screener.df %>% 
+  kbl() %>%
+  kable_paper(full_width = F)
+
+```
+
+**Disclaimer**: Please note that from all of these screeners we have this number of children with epilepsy. However, there is technically another child with epilepsy not present here and that is because they were screened with the wrong CFM type. 
+
+
+### DD Sample Breakdown
+
+```{r create a DD sample breakdown, echo = FALSE}
+Comprehensive.Screener.data <- Comprehensive.Screener.data %>%
+  mutate(KBB_DD_status_Broken = case_when(
+        KBB_CFM_DD_status == "Yes" & Epilepsy == "Yes" ~ "CFM and Epilepsy",
+        KBB_CFM_DD_status == "Yes" ~ "CFM Only",
+        Epilepsy == "Yes" ~ "Epilepsy Only",
+        TRUE ~ "NoDD"
+    
+  ) 
+  
+)
+
+data.frame(Frequency = cbind(table(Comprehensive.Screener.data$KBB_DD_status_Broken))) %>%
+  kbl(caption = "Frequency of DD by type") %>%
+  kable_paper(full_width = F)
+    
+```
+
+
+
+

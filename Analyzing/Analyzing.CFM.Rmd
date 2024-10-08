@@ -1,0 +1,1248 @@
+---
+title: "Analyzing CFM data"
+author: "Leandro Ledesma"
+date: "2024-04-04"
+output: html_document
+---
+
+### Universal block code settings
+
+```{r setup}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+### Load in the data manipulation packages first
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(readxl)
+library(openxlsx)
+library(lmtest) # bptest() function for homoscedasticity
+library(kableExtra)
+library(boot)
+library(broom)
+library(purrr)
+library(psych)
+
+```
+
+### Load in the data
+
+
+```{r load in the data, warning = FALSE}
+# Set working directory
+setwd("~/KBB_new_2/1_screener/final_data")
+
+# Manually type in the file name to be loaded
+file.name = "All Children (CFM manuscript).xlsx"
+
+# Save the data
+CFMscreener <- read_excel(file.name)
+
+```
+
+### Preparing data
+
+```{r potentially problematic screeners}
+CFM2_4 <- CFMscreener %>%
+  filter(Screener.Type == "CFM2_4")
+
+CFM5_17 <- CFMscreener %>%
+  filter(Screener.Type == "CFM5_17")
+
+# Potentially problematic IDs
+problematic.2_4 <- CFM2_4 %>%
+  filter(Child_age > 5)
+
+problematic.5_17 <- CFM5_17 %>%
+  filter(Child_age < 4.5)
+
+# Problematic data rbinded
+problematic.data <- rbind(problematic.2_4, problematic.5_17)
+
+# Save the problematic data
+setwd("~/KBB_new_2/errors")
+
+write.xlsx(problematic.data,
+           "wrong.screener.xlsx")
+
+# Remove problematic screeners
+CFM2_4 <- CFM2_4 %>%
+  filter(!(Child_ID %in% problematic.data$Child_ID))
+
+CFM5_17 <- CFM5_17 %>%
+  filter(!(Child_ID %in% problematic.data$Child_ID))
+
+data <- CFMscreener %>%
+  filter(!(Child_ID %in% problematic.data$Child_ID))
+
+# Problematic Ages (CFM5-17)
+problematic.5_17.age <- CFM5_17 %>%
+  filter(Child_age > 19) 
+
+# Remove subjects with the incorrect Age
+CFM5_17 <- CFM5_17 %>%
+  filter(!(Child_ID %in% problematic.5_17.age$Child_ID))
+
+data <- data %>%
+  filter(!(Child_ID %in% problematic.5_17.age$Child_ID))
+
+# Remove subjects with missing demographic information
+data <- data %>%
+  drop_na(Child_age, Child_Gender)
+
+CFM2_4 <- CFM2_4 %>%
+  drop_na(Child_age, Child_Gender)
+
+CFM5_17 <- CFM5_17 %>%
+  drop_na(Child_age, Child_Gender)
+
+```
+
+### Initial data inspection
+
+```{r intial data inspection, results='asis'}
+
+cat("This following message was constructed with code using the 'asis' argument for results. The imported dataset has the following name: ",file.name,". It contains", nrow(CFMscreener),"rows, each which correspond to information about a child that was screened in rural Zambia. There were some issues with the screener information and",nrow(problematic.data),"children were screened with the wrong screener for their age group. Additionally,",nrow(problematic.5_17.age)," children had the incorrect DOB writtern since they are older than the age 19. Lastly, there are instances of missing data for demographic information and these subjects will be dropped. Thus, only",nrow(data),"were kept for further analysis. Additionally, there are two screener types- the CFM2-4 and the CFM5-17. The following tables were constructed from information that came from both of those two screeners. There are",nrow(CFM5_17)," observations in the CFM5-17 screener and ",nrow(CFM2_4),"observations in the CFM2-4 screener.")
+
+```
+
+### Obtain descriptive statistics for both screener types
+
+```{r obtain descriptive statistics of our sample}
+# Select only age information
+age <- data %>%
+  select(Child_age, Screener.Type)
+
+# Obtain descriptive statistics for each Screener
+describeBy(age, age$Screener.Type)
+
+# Obtain gender information
+gender.screener.type.table <- data.frame(cbind(table(data$Child_Gender, data$Screener.Type))) %>%
+  mutate(Total = CFM2_4 + CFM5_17)
+
+# Add a bottom row to the table
+gender.table <- rbind(gender.screener.type.table, 
+      c(rbind(colSums(gender.screener.type.table))))
+
+# Rename the row names 
+row.names(gender.table) <- c("female", "male", "Total")
+
+# Print the table
+gender.table %>%
+  kbl() %>%
+  kable_paper(full_width = F)
+
+
+# What is the number of households visited?
+paste("The number of unique households visited is:",length(unique(data$HOH_ID)))
+```
+
+
+### Create new variables for at least thresholds (CFM2_4)
+
+Visual inspection of the scoring for the at least threshold shows that the code works as intended. 
+
+```{r create CFM at least threshold for 2_4, include = FALSE}
+# Create the at least some difficulty threshold
+CFM2_4 <- CFM2_4 %>%
+  mutate(atleast.some = case_when (
+    CFM_DD == "No difficulty" ~ 0,
+    TRUE ~ 1
+  )
+)
+
+# Create an at least a lot of difficulties
+CFM2_4 <- CFM2_4 %>%
+  mutate(atleast.alot = case_when (
+    CFM_DD == "No difficulty" ~ 0,
+    CFM_DD == "Some Difficulty" ~ 0,
+    TRUE ~ 1
+  )
+)
+
+# Create a cannot at all category
+CFM2_4 <- CFM2_4 %>%
+  mutate(cannot.at.all = case_when (
+    CFM_DD == "Cannot at all" ~ 1,
+    TRUE ~ 0
+  )
+)
+
+# Quality check
+table(CFM2_4$atleast.some)
+table(CFM2_4$atleast.alot)
+table(CFM2_4$cannot.at.all)
+
+# Further Quality check
+CFM2_4.final <- CFM2_4 %>%
+  select(HOH_ID, Child_ID, Child_Gender, Child_age, CFM_DD, atleast.some, atleast.alot, cannot.at.all)
+
+```
+
+### Create new variables for at least thresholds (CFM5_17)
+
+This is a bit more complex because we need to consider mental health as well. If they have weekly mental health problems, they can be a part of some difficulty. If they daily mental health problems then they can be either a lot of difficulty or cannot at all. These recommendations are based on table by a study from Beth Sprunt, Barbara McPake and Manjula Marella (2019)
+
+
+```{r create CFM at least threshold for 5_17}
+# Create the at least some difficulty threshold/weekly
+CFM5_17 <- CFM5_17 %>%
+  mutate(atleast.some.weekly = case_when (
+    CFM_DD == "No difficulty/Never" ~ 0,
+    CFM_DD == "No difficulty/A few times a year" ~ 0,
+    CFM_DD == "No difficulty/Monthly" ~ 0,
+    TRUE ~ 1
+  )
+)
+
+sort(unique(CFM5_17$CFM_DD))
+
+# Create an at least a lot of difficulties/daily
+CFM5_17 <- CFM5_17 %>%
+  mutate(atleast.alot.daily = case_when (
+    CFM_DD == "No difficulty/Never" ~ 0,
+    CFM_DD == "No difficulty/A few times a year" ~ 0,
+    CFM_DD == "No difficulty/Monthly" ~ 0,
+    CFM_DD == "No difficulty/Weekly" ~ 0,
+    
+    CFM_DD == "Some Difficulty/Never" ~ 0,
+    CFM_DD == "Some Difficulty/A few times a year" ~ 0,
+    CFM_DD == "Some Difficulty/Monthly" ~ 0,
+    CFM_DD == "Some Difficulty/Weekly" ~ 0,
+    
+    TRUE ~ 1
+  )
+)
+
+# Create a cannot at all category
+CFM5_17 <- CFM5_17 %>%
+  mutate(cannot.at.all.daily = case_when (
+    grepl("Cannot at all",CFM_DD ) ~ 1,
+    grepl("Daily",CFM_DD ) ~ 1,
+    TRUE ~ 0
+  )
+)
+
+# Quality check
+table(CFM5_17$atleast.some.weekly)
+table(CFM5_17$atleast.alot.daily)
+table(CFM5_17$cannot.at.all.daily)
+
+# Further Quality check
+CFM5_17.final <- CFM5_17 %>%
+  select(HOH_ID, Child_ID, Child_Gender, Child_age, CFM_DD, atleast.some.weekly, atleast.alot.daily, cannot.at.all.daily)
+
+# view(CFM5_17.final)
+```
+
+
+
+### Table 1: CFM by different cut offs
+
+This table will be presenting the prevalence of DD by different thresholds. For our intended purposes- we will be defining DD as 'a lot of difficulty' based on how others define it in the literature. For right now, we will not be disaggregating the data. Instead, we will be reporting proportions of children that fall within each DD category of severity and provide a 95% confidence interval for each CFM screener type. 
+
+
+```{r table 1 by different cut offs}
+# Create a data frame with prevalence point estimates for CFM2_4
+CFM2_4.prevalence <- data.frame(status = c("No difficulty",
+                                        "At least some difficulty",
+                                        "At least a lot of difficulty",
+                                        "Cannot at all"),
+                                point.estimate = c(round(1 - mean(CFM2_4.final$atleast.some),3),
+                                           round(mean(CFM2_4.final$atleast.some),3),
+                                           round(mean(CFM2_4.final$atleast.alot),3),
+                                           round(mean(CFM2_4.final$cannot.at.all),3)))
+
+# Calculate the standard error and then create confidence intervals for CFM2_4
+CFM2_4.prevalence <- CFM2_4.prevalence %>%
+  mutate(SE = round(sqrt(point.estimate*(1-point.estimate)
+                   /nrow(CFM2_4.final)),3),
+         z.value = 1.96,
+         lower.limit = round(point.estimate - z.value*SE,3),
+         upper.limit = round(point.estimate + z.value*SE,3)) %>%
+  mutate(point.estimate = point.estimate * 100,
+         lower.limit = lower.limit * 100,
+         upper.limit = upper.limit * 100)
+
+# If any value is smaller than 0 then convert it to 0
+CFM2_4.prevalence <- CFM2_4.prevalence %>%
+  mutate(lower.limit = ifelse(lower.limit < 0, 0, lower.limit))
+
+# Create the final variables to be used for the CFM2_4
+CFM2_4.table1 <- CFM2_4.prevalence %>%
+  transmute(status, point.estimate.CI = paste(point.estimate," ","(",lower.limit,"-",upper.limit,")",sep=""))
+
+# Create a data frame with prevalence point estimates for CFM5_17
+CFM5_17.prevalence <- data.frame(status = c("No difficulty",
+                                        "At least some difficulty/weekly",
+                                        "At least a lot of difficulty/daily",
+                                        "Cannot at all/daily"),
+                                point.estimate = c(round(1 - mean(CFM5_17.final$atleast.some.weekly),3),
+                                           round(mean(CFM5_17.final$atleast.some.weekly),3),
+                                           round(mean(CFM5_17.final$atleast.alot.daily),3),
+                                           round(mean(CFM5_17.final$cannot.at.all.daily),3)))
+
+
+# Calculate the standard error and then create confidence intervals for CFM5_17
+CFM5_17.prevalence <- CFM5_17.prevalence %>%
+  mutate(SE = round(sqrt(point.estimate*(1-point.estimate)
+                   /nrow(CFM5_17.final)),3),
+         z.value = 1.96,
+         lower.limit = round(point.estimate - z.value*SE,3),
+         upper.limit = round(point.estimate + z.value*SE,3)) %>%
+  mutate(point.estimate = point.estimate * 100,
+         lower.limit = lower.limit * 100,
+         upper.limit = upper.limit * 100)
+
+
+# Create the final variables to be used for the CFM2_4
+CFM5_17.table1 <- CFM5_17.prevalence %>%
+  transmute(status, point.estimate.CI = paste(point.estimate," ","(",lower.limit,"-",upper.limit,")",sep=""))
+
+# Bind the two datasets into one
+CFM_table1 <- rbind(CFM2_4.table1, CFM5_17.table1)
+
+# Print the table
+CFM_table1 %>%
+  dplyr::rename(` ` = status,
+         `Percentage (95% CI)` = point.estimate.CI) %>%
+ kbl(caption = "Table 1: Prevalence of DD by different thresholds for CFM 2-4 and CFM 5-17.",
+      align = "lc",
+      font = 20) %>%
+  kable_classic_2(font_size = 19,
+                  full_width = FALSE,
+                  html_font = "Times New Roman") %>%
+  gsub("font-size: initial !important;", "font-size: 16pt !important;", .) %>% # Title font size!
+  row_spec(0,bold=TRUE) %>%
+  pack_rows(paste("CFM 2-4 (n = ",nrow(CFM2_4.final),")",sep=""),1,4) %>% 
+  pack_rows(paste("CFM 5-17 (n = ",nrow(CFM5_17.final),")",sep=""),5,8) %>%
+  footnote(general = "Different thresholds for defining DD for both the CFM 2-4 and CFM 5-17 are based on the severity of difficulty for one or more functional domains. The 'at least' categories refer to that level of severity plus the more severe cases. The 'weekly' and 'daily' categories correspond to the frequency of mental health related difficulties, which are only asked in the CFM 5-17.")
+```
+
+
+### Table 1.2 
+
+Let's follow Dr. Francis advice and use boot strapping to see how picking one child randomly from each household would affect the proportion of children with DD.
+
+
+```{r table1 boot strapping}
+library(plyr)
+CFM.final <- rbind.fill(CFM2_4.final, CFM5_17.final)
+
+# Number of unique households
+length(unique(CFM.final$HOH_ID))
+
+bootstrap.CFM2_4 <- list()
+bootstrap.CFM5_17 <- list()
+
+for(ii in 1:1000) {
+
+# Arrange by households
+CFM.final <- CFM.final %>%
+  arrange(HOH_ID)
+
+# Assign everyone a random number
+CFM.final.random <-  CFM.final %>%
+  mutate(Random.num = sample(nrow(CFM.final)))
+
+# Filter the smallest number for each HOH_ID
+one.random.child <- CFM.final.random %>%
+  group_by(HOH_ID) %>%
+  filter(Random.num == min(Random.num)) %>%
+  ungroup()
+
+# Separate data into CFM2_4 and CFM5_17
+CFM2_4.random.child <- one.random.child %>%
+  select(atleast.some, atleast.alot, cannot.at.all) %>%
+  filter(complete.cases(.))
+
+CFM5_17.random.child <- one.random.child %>%
+  select(atleast.some.weekly, atleast.alot.daily, cannot.at.all.daily) %>%
+  filter(complete.cases(.))
+
+# Obtain the proportions of each difficulty type
+CFM2_4.ColMeans <- colMeans(CFM2_4.random.child)
+CFM5_17.ColMeans <- colMeans(CFM5_17.random.child)
+
+# Save this into a list
+bootstrap.CFM2_4[[ii]] <- CFM2_4.ColMeans
+bootstrap.CFM5_17[[ii]] <- CFM5_17.ColMeans
+
+}
+
+# Obtain the grans means of the bootstrapped data
+grand.prop.CFM2_4 <- round(colMeans(do.call(rbind,bootstrap.CFM2_4)),3)
+grand.prop.CFM5_17 <- round(colMeans(do.call(rbind,bootstrap.CFM5_17)),3)
+
+# Add this information to the table above
+bootstrapped.results <- c(1 - grand.prop.CFM2_4[1] , grand.prop.CFM2_4,
+                          1-  grand.prop.CFM5_17[1], grand.prop.CFM5_17)
+
+CFM_table1.2.added.bootstrap <- CFM_table1 %>%
+  mutate(bootstrapped = bootstrapped.results)
+
+# Add 95% confidence intervals
+CFM_table1.added.CI <- CFM_table1.2.added.bootstrap %>%
+  mutate(SE = round(sqrt(bootstrapped*(1-bootstrapped)
+                   /length(unique(CFM.final$HOH_ID))),3),
+         z.value = 1.96,
+         lower.limit = round(bootstrapped - z.value*SE,3),
+         upper.limit = round(bootstrapped + z.value*SE,3)) %>%
+  mutate(bootstrapped = bootstrapped * 100,
+         lower.limit = lower.limit * 100,
+         upper.limit = upper.limit * 100)
+
+CFM_table1.2 <- CFM_table1.added.CI %>%
+  transmute(status, point.estimate.CI, bootstrapped.CI = paste(bootstrapped," ","(",lower.limit,"-",upper.limit,")",sep=""))
+
+
+CFM_table1.2 %>%
+  dplyr::rename(` ` = status,
+         `% (95% CI)` = point.estimate.CI,
+         `Bootstrapped % (95% CI)` = bootstrapped.CI) %>%
+ kbl(caption = "Table 1: Prevalence of DD by different thresholds for CFM 2-4 and CFM 5-17 and by bootstrapping.",
+      align = "lcc",
+      font = 20) %>%
+  kable_classic_2(font_size = 19,
+                  full_width = FALSE,
+                  html_font = "Times New Roman") %>%
+  gsub("font-size: initial !important;", "font-size: 16pt !important;", .) %>% # Title font size!
+  row_spec(0,bold=TRUE) %>%
+  pack_rows(paste("CFM 2-4 (n = ",nrow(CFM2_4.final),")",sep=""),1,4) %>% 
+  pack_rows(paste("CFM 5-17 (n = ",nrow(CFM5_17.final),")",sep=""),5,8) %>%
+  footnote(general = "Different thresholds for defining DD for both the CFM 2-4 and CFM 5-17 are based on the severity of difficulty for one or more functional domains. The 'at least' categories refer to that level of severity plus the more severe cases. The 'weekly' and 'daily' categories correspond to the frequency of mental health related difficulties, which are only asked in the CFM 5-17. Additionally, the prevalence of DD was assessed by taking the mean proportion of DD from a smaller sample  comprised of randomly selected children from our main sample, each from one HOH (n=503). This was repeated 1,000 times and the grand mean proprotions with a 95% CI are presented.")
+
+```
+
+
+### Quality Control Table 1
+
+```{r do the numbers for table 1 add up}
+# Nest by different types of difficulties
+CFM2_4.final.nested <- CFM2_4.final %>%
+  select(atleast.some, atleast.alot, cannot.at.all) %>%
+  stack() %>%
+  dplyr::rename(category = ind, DD = values) %>%
+  group_by(category) %>%
+  nest()
+
+# Create a comprehension table function
+table.x <- function(df) {
+  
+  # Create a table of the data frame
+  Frequency <- table(df)
+  
+  # Convert the table into a dataframe
+  table.df <- dplyr::rename(tidy(Frequency), Frequency = n)
+  
+  # Include the Proportions as well
+  table.df$Proportion <- round(cbind(prop.table(table(df))),2) 
+  
+  # Print the outcome
+  table.df
+}
+
+# Run the table x function to obtain the information we need in terms of prevalence
+CFM2_4.final.nested %>%
+  mutate(counts = map(data, table.x)) %>%
+  unnest(counts) %>%
+  pivot_wider(names_from = DD,
+              values_from = Frequency:Proportion)
+
+
+# Nest by different types of difficulties (CFM5-17)
+CFM5_17.final.nested <- CFM5_17.final %>%
+  select(atleast.some.weekly, atleast.alot.daily, cannot.at.all.daily) %>%
+  stack() %>%
+  dplyr::rename(category = ind, DD = values) %>%
+  group_by(category) %>%
+  nest()
+
+# Run the table x function on the information we need in terms of prevalence
+CFM5_17.final.nested %>%
+  mutate(counts = map(data, table.x)) %>%
+  unnest(counts) %>%
+  pivot_wider(names_from = DD,
+              values_from = Frequency:Proportion)
+```
+
+
+
+
+### Table 2 Sex differences between CFM 2-4 and CFM 5-17
+
+We will need to obtain the point estimates of DD prevalence by different thresholds for both genders.
+
+```{r Table 2 sex differences}
+# Get point estimates of prevalence of DD by gender
+CFM2_4.gender <- CFM2_4.final %>%
+  group_by(Child_Gender) %>%
+  dplyr::summarize(no.DD = round(1 - mean(atleast.some),3)*100,
+                   atleast.some.mean = round(mean(atleast.some),3)*100,
+                   atleast.alot.mean = round(mean(atleast.alot),3)*100,
+                   cannot.at.all.mean = round(mean(cannot.at.all),3)*100,
+                   n = length(Child_Gender),
+                   age = round(mean(Child_age),1))
+
+CFM5_17.gender <- CFM5_17.final %>%
+  group_by(Child_Gender) %>%
+  dplyr::summarize(no.DD = round(1 - mean(atleast.some.weekly),3)*100,
+                   atleast.some.weekly.mean = round(mean(atleast.some.weekly),3)*100,
+                   atleast.alot.daily.mean = round(mean(atleast.alot.daily),3)*100,
+                   cannot.at.all.daily.mean = round(mean(cannot.at.all.daily),3)*100,
+                   n = length(Child_Gender),
+                   age = round(mean(Child_age, na.rm = TRUE),1))
+
+table(CFM5_17.final$Child_Gender, CFM5_17.final$atleast.some.weekly)
+
+# Trasnpostion the created dataframes so they can be graphed the way we invision
+CFM2_4.gender.t <- t(CFM2_4.gender) %>% data.frame()
+CFM5_17.gender.t <- t(CFM5_17.gender) %>% data.frame()
+
+# Add the row names as a variable
+CFM2_4.gender.t$status <- row.names(CFM2_4.gender.t)
+CFM5_17.gender.t$status <- row.names(CFM5_17.gender.t)
+
+# Remove rownames
+row.names(CFM2_4.gender.t) <- NULL
+row.names(CFM5_17.gender.t) <- NULL
+
+# Bind them together
+CFM.gender <- cbind(CFM2_4.gender.t, CFM5_17.gender.t)
+
+# Change the names to reduce problems with data manipulation
+names(CFM.gender) <- c("X1", "X2", "status", "X3","X4","status2")
+
+# Create a table from this
+table2 <- CFM.gender %>%
+  filter(!(status %in% c("Child_Gender",
+                         "n",
+                         "age"))) %>%
+  select(status, X2, X1, status2, X4, X3) %>%
+  dplyr::rename(
+         `Male (n=75)` = X2,
+         `Female (n=83)` = X1,
+         `Male (n=706)` = X4,
+         `Female (n=693)` = X3)
+
+# Run Chisquares
+chisq1 <- chisq.test(table(CFM2_4.final$Child_Gender, CFM2_4.final$atleast.some))
+chisq2 <- chisq.test(table(CFM2_4.final$Child_Gender, CFM2_4.final$atleast.alot))
+chisq3 <- chisq.test(table(CFM2_4.final$Child_Gender, CFM2_4.final$cannot.at.all))
+
+chisq4 <- chisq.test(table(CFM5_17.final$Child_Gender, CFM5_17.final$atleast.some.weekly))
+chisq5 <- chisq.test(table(CFM5_17.final$Child_Gender, CFM5_17.final$atleast.alot.daily))
+chisq6 <- chisq.test(table(CFM5_17.final$Child_Gender, CFM5_17.final$cannot.at.all.daily))
+
+# Add Chi square info from CFM2_4
+table2$chiq.1 <- c(round(chisq1$statistic,2),
+                   round(chisq1$statistic,2),
+                   round(chisq2$statistic,2),
+                   round(chisq3$statistic,2))
+
+table2$chiq.1.p <- c(round(chisq1$p.value,2),
+                     round(chisq1$p.value,2),
+                     round(chisq2$p.value,2),
+                     round(chisq3$p.value,2))
+
+# Add Chi square info from CFM5_17
+table2$chiq.2 <- c(round(chisq4$statistic,2),
+                   round(chisq4$statistic,2),
+                   round(chisq5$statistic,2),
+                   round(chisq6$statistic,2))
+
+table2$chiq.2.p <- c(round(chisq4$p.value,2),
+                     round(chisq4$p.value,2),
+                     round(chisq5$p.value,2),
+                     round(chisq6$p.value,2))
+
+
+
+# Make the values of status variable prettier
+table2 <- table2 %>%
+  mutate(status = case_when(
+    
+    status == "no.DD" ~ "No difficulty",
+    status == "atleast.some.mean" ~ "At least some difficulty",
+    status == "atleast.alot.mean" ~ "At least a lot of difficulty",
+    status == "cannot.at.all.mean" ~ "Cannot at all",
+    TRUE ~ status
+  ),
+  
+  status2 = case_when(
+      
+    status2 == "no.DD" ~ "No difficulty",
+    status2 == "atleast.some.weekly.mean" ~ "At least some difficulty /weekly",
+    status2 == "atleast.alot.daily.mean" ~ "At least a lot of difficulty/daily",
+    status2 == "cannot.at.all.daily.mean" ~ "Cannot at all/daily",
+    TRUE ~ status2
+    )
+ )
+
+
+# Change the order of variables for table 2 one last time
+table2 <- table2 %>%
+  select(status, `Male (n=75)`, `Female (n=83)`, chiq.1, chiq.1.p,status2, `Male (n=706)`, `Female (n=693)`, chiq.2, chiq.2.p)
+
+# Create the Chi Square symbol
+chi.symbol <- "\u03C7\u00B2"
+
+# Obtain gender from code
+CFM2_4.gender$n
+CFM5_17.gender$n
+
+# Rename the variables table 2
+names(table2) <- c("", 
+                   paste("Male % (n=",CFM2_4.gender$n[2],")",sep=""), 
+                   paste("Female % (n=",CFM2_4.gender$n[1],")",sep=""), 
+                   chi.symbol, 
+                   "p",
+                   "",
+                   paste("Male % (n=",CFM5_17.gender$n[2],")",sep=""), 
+                   paste("Female % (n=",CFM5_17.gender$n[1],")",sep=""),
+                   chi.symbol, 
+                   "p")
+
+table2 %>%
+ kbl(caption = "Table 2: Prevalence of DD between sex at different thresholds",
+      align = "lcccclcccc",
+      font = 20) %>%
+  kable_classic_2(font_size = 19,
+                  full_width = TRUE,
+                  html_font = "Times New Roman") %>%
+  gsub("font-size: initial !important;", "font-size: 16pt !important;", .) %>% # Title font size!
+  row_spec(0,bold=TRUE) %>%
+  add_header_above(c(" " = 1,"CFM 2-4" = 4, " " = 1,"CFM 5-17" = 4), bold = TRUE) %>%
+  footnote(general = "Chi square tests were used to investigate the prevalence of DD between sex at different thresholds of DD. The p values demonstrate that there were no statistically significant differences in the prevalence of DD between sex for any of the different thresholds in the CFM 2-4 and CFM 5-17.")
+
+
+```
+
+
+
+### Bar graphs displaying the proportion of domain difficulties in DD samples for CFM 2-4 and CFM 5-17 
+
+
+```{r table 3 prevalence by different domains}
+# Obtain all the instances of specific domain disability for CFM2_4
+CFM2_4.domain.difficulties <- CFM2_4 %>%
+  select(CFM_DD_type) %>%
+  drop_na() %>%
+  unlist() %>%
+  str_split("; ") %>%
+  do.call(c,.)
+  
+# Obtain the percentage of each
+CFM2_4.domain.difficulties.prop <- sort(round(prop.table(table(CFM2_4.domain.difficulties)),3)*100)
+
+# Convert it to a dataframe
+CFM2_4.prop <- data.frame(CFM2_4.domain.difficulties.prop) %>%
+  dplyr::rename(domain = CFM2_4.domain.difficulties, Percentage = Freq) %>%
+  mutate(domain = as.character(domain))
+
+# Remove the CFM and number proportion from all of the strings
+remove.CFM2_4 <- paste("CF",1:16,"_" ,sep="", collapse ="|")
+
+# Remove the CF portion
+CFM2_4.prop <- CFM2_4.prop %>%
+  mutate(domain = gsub(pattern = remove.CFM2_4, replacement = "", domain)) %>%
+  mutate(domain = gsub("_", " ", domain))
+
+# Change the ranking for the factor
+CFM2_4.prop <- CFM2_4.prop %>%
+  arrange(desc(Percentage)) %>%
+  mutate(domain = factor(domain, levels = domain))
+
+
+# Obtain all the instances of specific domain disability for CFM5_17
+CFM5_17.domain.difficulties <- CFM5_17 %>%
+  select(CFM_DD_type) %>%
+  drop_na() %>%
+  unlist() %>%
+  str_split("; ") %>%
+  do.call(c,.)
+
+# Obtain the percentage of each
+CFM5_17.domain.difficulties.prop <- sort(round(prop.table(table(CFM5_17.domain.difficulties)),3)*100)
+
+# Convert it to a dataframe
+CFM5_17.prop <- data.frame(CFM5_17.domain.difficulties.prop) %>%
+  dplyr::rename(domain = CFM5_17.domain.difficulties, Percentage = Freq) %>%
+  mutate(domain = as.character(domain))
+
+# Remove the CFM and number proportion from all of the strings
+remove.CFM5_17 <- paste("CF",1:24,"_" ,sep="", collapse ="|")
+
+# Remove the CF portion
+CFM5_17.prop <- CFM5_17.prop %>%
+  mutate(domain = gsub(pattern = remove.CFM5_17, replacement = "", domain)) %>%
+  mutate(domain = gsub("_", " ", domain))
+
+# Change the ranking for the factor
+CFM5_17.prop <- CFM5_17.prop %>%
+  arrange(desc(Percentage)) %>%
+  mutate(domain = factor(domain, levels = domain))
+
+# Create bar graphs for these
+CFM2_4.prop %>%
+  ggplot(aes(x = domain, y = Percentage)) +
+  geom_bar(stat = "identity",
+           fill = "white",
+           color = "black") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,32)) +
+  geom_text(aes(label = paste(format(round(Percentage,1),
+                                     nsmall = 1),
+                              "%", sep = "")),
+                nudge_y = 1.7, size = 4) +
+  coord_flip() + 
+  theme_classic() +
+  labs(title = "Percentage of at least some difficulty\nby functional domain CFM 2-4 (n=18)",
+       x = "Functional Domain",
+       y = "Percentage (%)") +
+  theme(plot.title = element_text(size = 20,
+                                    hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 14),
+        plot.caption = element_text(size = 12,
+                                    hjust = 0))
+
+
+# Create bar graphs for these
+CFM5_17.prop %>%
+  ggplot(aes(x = domain, y = Percentage)) +
+  geom_bar(stat = "identity",
+           fill = "white",
+           color = "black") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,22)) +
+  geom_text(aes(label = paste(format(round(Percentage,1),
+                                     nsmall = 1),
+                              "%", sep = "")),
+                nudge_y = 1.2, size = 4) +
+  coord_flip() + 
+  theme_classic() +
+  labs(title = "Percentage of at least some difficulty\nby functional domain CFM 5-17 (n=303)",
+       x = "Functional Domain",
+       y = "Percentage (%)") +
+  theme(plot.title = element_text(size = 20,
+                                    hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 14),
+        plot.caption = element_text(size = 12,
+                                    hjust = 0))
+```
+
+
+### Investigating gender differences in reported problems (at least some difficulty) CFM5_17
+
+This will require a lot of Chi Squares, which would be tedious by hand. Let's see if we can automate this process
+
+```{r creating tables to identify gender differences, include = FALSE}
+# Obtain the sample sizes we need
+CFM5_17.sex.DD.n <-data.frame(rbind(table(CFM5_17.final$Child_Gender,
+                                             CFM5_17.final$atleast.some.weekly)))
+
+# Rename the variables
+names(CFM5_17.sex.DD.n) <- c("No", "Yes")
+
+CFM5_17.sex.DD.n$sex <- row.names(CFM5_17.sex.DD.n)
+
+# Obtain the value for it
+males.DD.n <- CFM5_17.sex.DD.n %>% filter(sex == "male") %>% select(Yes) %>% unlist()
+females.DD.n <- CFM5_17.sex.DD.n %>% filter(sex == "female") %>% select(Yes) %>% unlist()
+
+# Obtain all the instances of specific domain disability for CFM5_17 males and females
+CFM5_17.domain.difficulties.males <- CFM5_17 %>%
+  filter(Child_Gender == "male") %>%
+  select(CFM_DD_type) %>%
+  drop_na() %>%
+  unlist() %>%
+  str_split("; ") %>%
+  do.call(c,.)
+
+CFM5_17.domain.difficulties.females <- CFM5_17 %>%
+  filter(Child_Gender == "female") %>%
+  select(CFM_DD_type) %>%
+  drop_na() %>%
+  unlist() %>%
+  str_split("; ") %>%
+  do.call(c,.)
+
+# Obtain the frequency of each difficulty
+male.difficulty.count = data.frame(m.case = cbind(table(CFM5_17.domain.difficulties.males)))
+female.difficulty.count = data.frame(f.case = cbind(table(CFM5_17.domain.difficulties.females)))
+
+# Add the difficulty types as a variable
+male.difficulty.count$domain <- row.names(male.difficulty.count)
+female.difficulty.count$domain <- row.names(female.difficulty.count)
+
+# Add the n for each group
+male.difficulty.count$m.n <- males.DD.n
+female.difficulty.count$f.n <- females.DD.n
+  
+# Create a variable indicating no cases and calculate the proportion
+male.difficulty.count <- male.difficulty.count %>%
+  mutate(m.no.case = m.n - m.case,
+         prop.m = round(m.case/m.n,3)) %>%
+  select(domain, m.case, m.no.case ,prop.m)
+
+female.difficulty.count <- female.difficulty.count %>%
+  mutate(f.no.case = f.n - f.case,
+         prop.f = round(f.case/f.n,3)) %>%
+  select(domain, f.case, f.no.case,prop.f)
+
+# Join both datasets together
+male.female.joined <- male.difficulty.count %>%
+full_join(female.difficulty.count, by = "domain")
+
+
+####
+##### Run a chisq.test for each functional domain between frequency of male and females
+###
+
+# Create a vector will all unique functional domains
+functional.domains<- unique(male.female.joined$domain)
+
+# Create two lists, one to keep track of chi square estimates and the other for the p-value
+chisq.estimate.list <- list()
+chisq.p.list <- list()
+
+# Start a for loop to obtain the chi square estimates and p values for each domain 
+
+for(ii in 1:length(functional.domains)) {
+  
+  # Obtain the frequency of problems for that domain from males out of non cases
+  row1.male <- male.female.joined %>%
+    filter(domain == functional.domains[ii]) %>%
+    select(starts_with("m")) %>%
+    do.call(c,.)
+  
+  # Obtain the frequency of problems for that domain from females out of non cases
+  row2.female <- male.female.joined %>%
+    filter(domain == functional.domains[ii]) %>%
+    select(starts_with("f")) %>%
+    do.call(c,.)
+  
+  # Create a contingency table
+  contingency.table <- rbind(row1.male,
+                             row2.female)
+  
+  # Run chi squares on the contingency table
+  chisq.test <- chisq.test(contingency.table)
+  
+  # Save the estimates and p.values in lists
+  chisq.estimate.list[[ii]] <- chisq.test$statistic
+  chisq.p.list[[ii]] <- chisq.test$p.value
+
+}
+
+# Unlist to obtain the results in a dataframe
+chisq.results <- data.frame(domain = male.female.joined$domain,
+                            male.prop = male.female.joined$prop.m,
+                            female.prop = male.female.joined$prop.f,
+                            chisq.estimate = unlist(chisq.estimate.list),
+                            chisq.p = unlist(chisq.p.list))
+
+## Let's pretty up the results by removing the 'CF' portion in the domain variable
+
+# Remove the CFM and number proportion from all of the strings
+remove.CFM5_17 <- paste("CF",1:24,"_" ,sep="", collapse ="|")
+
+# Remove the CF portion
+chisq.results <- chisq.results %>%
+  mutate(domain = gsub(pattern = remove.CFM5_17, replacement = "", domain)) %>%
+  mutate(domain = gsub("_", " ", domain))
+
+
+# Add an order system by the following: Physical -> Cognitive -> Behavioral -> Affect
+chisq.results <- chisq.results %>%
+  mutate(domain.group = case_when(
+    
+    domain == "Anxiety" ~ "Affect",
+    domain == "Depression" ~ "Affect",
+    domain == "Seeing" ~ "Physical",
+    domain == "Hearing" ~ "Physical",
+    domain == "Walking 100" ~ "Physical",
+    domain == "Walking 500" ~ "Physical",
+    TRUE ~ "Cognitive/Behavioral"
+  ))
+
+# Convert it into a factor
+chisq.results$domain.group <- factor(chisq.results$domain.group,
+                              levels = c("Physical",
+                                   "Cognitive/Behavioral",
+                                   "Affect"))
+
+chisq.results <- chisq.results[order(chisq.results$domain.group),]
+
+chisq.results <- chisq.results %>%
+  arrange(domain.group,domain)
+
+# Rounding and multiplying variables
+table3 <- chisq.results %>%
+  transmute(domain,
+            male.per = male.prop*100,
+            female.per = female.prop*100,
+            chisq.estimate = round(chisq.estimate,2),
+            chisq.p = round(chisq.p,3))
+
+# Rename the variables table 3
+names(table3) <- c("domain", 
+                   paste("Male % (n=",males.DD.n,")",sep=""), 
+                   paste("Female % (n=",females.DD.n,")",sep=""), 
+                   chi.symbol, 
+                   "p")
+
+# Print the table
+table3 %>%
+ kbl(caption = "Table 3: Functional domain difficulties by sex",
+      align = "lcccc",
+      font = 20) %>%
+  kable_classic_2(font_size = 19,
+                  full_width = TRUE,
+                  html_font = "Times New Roman") %>%
+  gsub("font-size: initial !important;", "font-size: 16pt !important;", .) %>% # Title font size!
+  row_spec(0,bold=TRUE) #%>%
+  #add_header_above(c(" " = 1,"CFM 2-4" = 4, " " = 1,"CFM 5-17" = 4), bold = TRUE)
+
+```
+
+
+### Investigating gender differences in reported problems (at least a some difficulty AND lot of difficulty/Daily) CFM5_17
+
+This is going to be complimentary to the table created above. This is going to be different because I only want "a lot of difficulty" cases or "daily" cases but I do not want to count a "weekly" with an "a lot of difficuly" case, only the latter. Fortunately I went back and created a script that was able to do just this. The variable below only contains at leat a lot of difficulty and only daily for mental health related problems. 
+
+
+```{r investigating gender differences in a lot of difficulty domains}
+# Extract only at least a lot of difficulty children/daily
+atleast.alot.daily <- CFM5_17 %>%
+  filter(CFM.atleast.alot != "")
+
+# Obtain the sample sizes we need
+CFM5_17.sex.DD.n <-data.frame(rbind(table(atleast.alot.daily$Child_Gender,
+                                             atleast.alot.daily$CFM_DD_status)))
+
+CFM5_17.sex.DD.n$sex <- row.names(CFM5_17.sex.DD.n)
+
+# Obtain the value for it
+males.DD.n2 <- CFM5_17.sex.DD.n %>% filter(sex == "male") %>% select(Yes) %>% unlist()
+females.DD.n2 <- CFM5_17.sex.DD.n %>% filter(sex == "female") %>% select(Yes) %>% unlist()
+
+# Obtain the frequency of each functional domain difficulty
+# Obtain all the instances of specific domain disability for CFM5_17 males and females
+CFM5_17.atleast.alot.daily.males <- atleast.alot.daily %>%
+  filter(Child_Gender == "male") %>%
+  select(CFM.atleast.alot) %>%
+  drop_na() %>%
+  unlist() %>%
+  str_split("; ") %>%
+  do.call(c,.)
+
+CFM5_17.atleast.alot.daily.females <- atleast.alot.daily %>%
+  filter(Child_Gender == "female") %>%
+  select(CFM.atleast.alot) %>%
+  drop_na() %>%
+  unlist() %>%
+  str_split("; ") %>%
+  do.call(c,.)
+
+
+# Remove cells that have ""
+CFM5_17.atleast.alot.daily.males <- CFM5_17.atleast.alot.daily.males[CFM5_17.atleast.alot.daily.males != ""]
+CFM5_17.atleast.alot.daily.females <- CFM5_17.atleast.alot.daily.females[CFM5_17.atleast.alot.daily.females != ""]
+
+# Obtain the frequency of each difficulty
+male.atleast.alot.daily.count = data.frame(m.case = cbind(table(CFM5_17.atleast.alot.daily.males)))
+female.atleast.alot.daily.count = data.frame(f.case = cbind(table(CFM5_17.atleast.alot.daily.females)))
+
+# Add the difficulty types as a variable
+male.atleast.alot.daily.count$domain <- row.names(male.atleast.alot.daily.count)
+female.atleast.alot.daily.count$domain <- row.names(female.atleast.alot.daily.count)
+
+# Add the n for each group
+male.atleast.alot.daily.count$m.n <- males.DD.n2
+female.atleast.alot.daily.count$f.n <- females.DD.n2
+  
+# Create a variable indicating no cases and calculate the proportion
+male.atleast.alot.daily.count <- male.atleast.alot.daily.count %>%
+  mutate(m.no.case = m.n - m.case,
+         prop.m = round(m.case/m.n,3)) %>%
+  select(domain, m.case, m.no.case ,prop.m)
+
+female.atleast.alot.daily.count <- female.atleast.alot.daily.count %>%
+  mutate(f.no.case = f.n - f.case,
+         prop.f = round(f.case/f.n,3)) %>%
+  select(domain, f.case, f.no.case,prop.f)
+
+# Join both datasets together
+male.female.alot.daily.joined <- male.atleast.alot.daily.count %>%
+full_join(female.atleast.alot.daily.count, by = "domain")
+
+####
+##### Run a chisq.test for each functional domain between frequency of male and females
+###
+
+# Create a vector will all unique functional domains
+functional.domains <- unique(male.female.alot.daily.joined$domain)
+
+# Create two lists, one to keep track of chi square estimates and the other for the p-value
+chisq.estimate.list2 <- list()
+chisq.p.list2 <- list()
+
+# Start a for loop to obtain the chi square estimates and p values for each domain 
+
+for(ii in 1:length(functional.domains)) {
+  
+  # Obtain the frequency of problems for that domain from males out of non cases
+  row1.male <- male.female.alot.daily.joined %>%
+    filter(domain == functional.domains[ii]) %>%
+    select(starts_with("m")) %>%
+    do.call(c,.)
+  
+  # Obtain the frequency of problems for that domain from females out of non cases
+  row2.female <- male.female.alot.daily.joined %>%
+    filter(domain == functional.domains[ii]) %>%
+    select(starts_with("f")) %>%
+    do.call(c,.)
+  
+  # Create a contingency table
+  contingency.table <- rbind(row1.male,
+                             row2.female)
+  
+  # Run chi squares on the contingency table
+  chisq.test <- chisq.test(contingency.table)
+  
+  # Save the estimates and p.values in lists
+  chisq.estimate.list2[[ii]] <- chisq.test$statistic
+  chisq.p.list2[[ii]] <- chisq.test$p.value
+
+}
+
+# Unlist to obtain the results in a dataframe
+chisq.results2 <- data.frame(domain = male.female.alot.daily.joined$domain,
+                            male.prop = male.female.alot.daily.joined$prop.m,
+                            female.prop = male.female.alot.daily.joined$prop.f,
+                            chisq.estimate = unlist(chisq.estimate.list2),
+                            chisq.p = unlist(chisq.p.list2))
+
+# Arrange the results by the p.value
+chisq.results2 <- chisq.results2 %>%
+  arrange(chisq.p)
+
+## Let's pretty up the results by removing the 'CF' portion in the domain variable
+
+# Remove the CFM and number proportion from all of the strings
+remove.CFM5_17 <- paste("CF",1:24,"_" ,sep="", collapse ="|")
+
+# Remove the CF portion
+chisq.results2 <- chisq.results2 %>%
+  mutate(domain = gsub(pattern = remove.CFM5_17, replacement = "", domain)) %>%
+  mutate(domain = gsub("_", " ", domain))
+
+# Rounding and multiplying variables
+table3.1 <- chisq.results2 %>%
+  transmute(domain,
+            male.per = male.prop*100,
+            female.per = female.prop*100,
+            chisq.estimate = round(chisq.estimate,2),
+            chisq.p = round(chisq.p,3))
+
+
+# Add an order system by the following: Physical -> Cognitive -> Behavioral -> Affect
+table3.1 <- table3.1 %>%
+  mutate(domain.group = case_when(
+    
+    domain == "Anxiety" ~ "Affect",
+    domain == "Depression" ~ "Affect",
+    domain == "Seeing" ~ "Physical",
+    domain == "Hearing" ~ "Physical",
+    domain == "Walking 100" ~ "Physical",
+    domain == "Walking 500" ~ "Physical",
+    TRUE ~ "Cognitive/Behavioral"
+  ))
+
+# Convert it into a factor
+table3.1$domain.group <- factor(table3.1$domain.group,
+                         levels = c("Physical",
+                                   "Cognitive/Behavioral",
+                                   "Affect"))
+table3.1 <- table3.1[order(table3.1$domain.group),]
+
+table3.1 <- table3.1 %>%
+  arrange(domain.group,domain)
+
+
+# Join this table with the one from the previous section 
+table3.joined <- left_join(table3, table3.1, by = "domain")
+
+# Drop the domain group
+table3.joined <- table3.joined %>% select(-domain.group)
+
+
+# Make it easier to spot a significant by influencing P
+table3.joined <- table3.joined %>%
+  mutate(p = case_when(
+    
+    p < .001 ~ paste(p,"***",sep=""),
+    p < .01 ~ paste(p,"**",sep=""),
+    p < .05 ~ paste(p, "*", sep = ""),
+    TRUE ~ paste(p)
+  ),
+  
+  chisq.p = case_when(
+    
+    chisq.p < .001 ~ paste(chisq.p,"***",sep=""),
+    chisq.p < .01 ~ paste(chisq.p,"**",sep=""),
+    chisq.p < .05 ~ paste(chisq.p, "*", sep = ""),
+    TRUE ~ paste(chisq.p)
+    
+  )
+  
+)
+
+
+# Rename the variables table 2
+names(table3.joined) <- c("", 
+                   paste("Male % (n=",males.DD.n,")",sep=""), 
+                   paste("Female % (n=",females.DD.n,")",sep=""), 
+                   chi.symbol, 
+                   "p",
+                   paste("Male % (n=",males.DD.n2,")",sep=""), 
+                   paste("Female % (n=",females.DD.n2,")",sep=""), 
+                   chi.symbol, 
+                   "p")
+
+# Print the table
+table3.joined %>%
+ kbl(caption = "Table 3.1: Functional domain difficulties by sex for 'at least some difficulties' and 'at least a lot of difficulties' for the CFM 5-17.",
+      align = "lcccccccc",
+      font = 20) %>%
+  kable_classic_2(font_size = 19,
+                  full_width = TRUE,
+                  html_font = "Times New Roman") %>%
+  gsub("font-size: initial !important;", "font-size: 16pt !important;", .) %>% # Title font size!
+  row_spec(0,bold=TRUE) %>%
+  add_header_above(c(" " = 1,"At least some difficulties/weekly" = 4,"At least a lot of difficulties/Daily" = 4), bold = TRUE) %>%
+  pack_rows("Physical", 1,4) %>%
+  pack_rows("Cognitive/Behavioral", 5,13) %>%
+  pack_rows("Affect", 14,15) %>%
+  footnote(general = "Chi squares where used to investigate the prevalence of DD between sex in all the functional domains mentioned in the CFM 5-17. Statistically significant differences between sex were observed in hearing, walking 100, making friends and being understood outside items in the at least some difficulties/weekly threshold. There were no differences between sex in any of the items for the more severe cases.")
+```
+
+
+### Investigating the usage of assisstance (glasses, hearing aids, walkers)
+
+Create variables that indicate which children have seeing/hearing/walking difficulties (at_least)
+
+
+```{r investigating the access to resources}
+# Create a data frame for only physical related difficulties
+CFM5_17.physical <- CFM5_17 %>%
+  select(Child_Gender, 
+         glasses, hearing.aid, 
+         walking.equipment,
+         Seeing, 
+         Hearing, 
+         Walking)
+
+# Obtain the frequency of having assistance equipment for each type of physical difficulty
+seeing.df <- data.frame(cbind(table( CFM5_17.physical$Seeing, CFM5_17.physical$glasses))) %>% select(glasses = Yes,
+                                                                                                     no.glasses = No)
+
+hearing.df <- data.frame(cbind(table(CFM5_17.physical$Hearing, CFM5_17.physical$hearing.aid))) %>% select(hearing.aid = Yes,
+                                                                                                          no.hearing.aid = No)
+
+walking.df <- data.frame(cbind(table(CFM5_17.physical$Walking, CFM5_17.physical$walking.equipment))) %>% select(walking.equipment = Yes,
+                                                                                                                no.walking.equipment = No)
+# Combine the data frames all into one
+physical.df <- cbind(seeing.df,
+                     hearing.df,
+                     walking.df)
+
+# add an n variable
+physical.df <- physical.df %>%
+  mutate(seeing.n = glasses + no.glasses,
+         hearing.n = hearing.aid + no.hearing.aid,
+         walking.n = walking.equipment + no.walking.equipment )
+
+
+# Add difficulty as a row and change the variable order
+physical.df$difficulty <- row.names(physical.df)
+row.names(physical.df) <- NULL
+
+physical.df <- physical.df %>%
+  select(difficulty, 
+         glasses, 
+         no.glasses,
+         seeing.n,
+         hearing.aid, 
+         no.hearing.aid, 
+         hearing.n,
+         walking.equipment, 
+         no.walking.equipment,
+         walking.n)
+
+# Set the order for the difficulty
+physical.df <- physical.df %>%
+  mutate(difficulty = factor(difficulty,
+                             levels = c("No difficulty",
+                                        "Some Difficulty",
+                                        "A lot of Difficulty",
+                                        "Cannot at all")))
+
+physical.df <- physical.df[order(physical.df$difficulty),]
+
+row.names(physical.df) <- NULL
+
+# Introduce percentages
+table4 <- physical.df %>%
+  transmute(difficulty,
+            glasses,
+            glasses.per = round(glasses/seeing.n,3)*100,
+            seeing.n,
+            hearing.aid,
+            hearing.aid.per = round(hearing.aid/hearing.n,3)*100,
+            hearing.n,
+            walking.equipment,
+            walking.aid.per = round(walking.equipment/walking.n,3)*100,
+            walking.n)
+
+# Change of plans let's stack these together
+table4.seeing <- table4 %>% select(difficulty, AE.n = glasses, AE.per = glasses.per, n = seeing.n)
+table4.hearing <- table4 %>% select(difficulty, AE.n = hearing.aid, AE.per = hearing.aid.per, n = hearing.n)
+table4.walking <- table4 %>% select(difficulty, AE.n = walking.equipment, AE.per = walking.aid.per, n = walking.n)
+
+table4.stacked <- rbind(table4.seeing,
+                        table4.hearing,
+                        table4.walking)
+
+# Change the names of the table
+names(table4.stacked) <- c("", "n", "%", "Total")
+
+
+
+# Print the table
+table4.stacked %>%
+ kbl(caption = "Table 4: Percentage of assistive equipment available for physically related difficulties (CFM 5-17).",
+      align = "lccc",
+      font = 20) %>%
+  kable_classic_2(font_size = 19,
+                  full_width = TRUE,
+                  html_font = "Times New Roman") %>%
+  gsub("font-size: initial !important;", "font-size: 16pt !important;", .) %>% # Title font size!
+  row_spec(0,bold=TRUE) %>%
+  add_header_above(c(" " = 1,"Assistive Equipment" = 2," " = 1), bold = TRUE) %>%
+  pack_rows("Seeing", 1,4) %>%
+  pack_rows("Hearing", 5,8) %>%
+  pack_rows("Walking", 9,12) %>%
+  footnote(general = "Assistive equipment (AE) encapsulates any type of equipment that can be used to counteract the negative effects from physical difficulties. This would include glasses, contacts, hearing aids, walkers or other forms of equipment. When investigating the prevalence of AE in children with difficulties across different severities, the availability of AE is minimal with most cases having 0. This may be due to several reasons.")
+
+
+```
+

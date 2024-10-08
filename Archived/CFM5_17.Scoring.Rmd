@@ -1,0 +1,748 @@
+---
+title: "CFM 5-17 Cleaning"
+author: "Leandro Ledesma"
+date: "2024-02-23"
+output: html_document
+---
+
+### Universal block code settings
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+### Load in the data manipulation packages first
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+
+```
+
+### Load in the data
+
+
+```{r load in the data, warning = FALSE}
+# Set working directory to import data
+setwd("~/KBB_new_2/1_screener/raw_data")
+
+# Load in CFM2_4 files
+CFM5_17.uncleaned <- read_excel(list.files(pattern = "5_18"))
+
+# Remove any redundant rows
+CFM5_17.uncleaned <- unique(CFM5_17.uncleaned)
+```
+
+
+### Investigate the data
+
+From using the dim() function above, we can see that there are 79 variables (combinations of items and other information automatically captured by the ipads). We technically do not need all of this information to be present in our final cleaned CFM 2-4 data.
+
+```{r investigate the data}
+# The data dimensions
+dim(CFM5_17.uncleaned)
+
+# Show all variables and the first few rows of the values that comprise them
+#str(CFM5_17.uncleaned)
+```
+
+### Data cleaning
+
+From the variables above we want to keep the following and discard the rest. The chosen variables will give us information about:
+
+1) the location of where the data was collected
+
+2) the date that the data was collected
+
+3) information on the tester that collected the data
+
+4) demographic and housing information on the child
+
+5) The 16 CFM questions
+
+6) The 12 Bierbeck screener questions for epilepsy
+
+Additionally as we are selecting our variables to keep, we will be renaming some of the variables to make the more concice or to translate them to English. After removing unnecessary variables, our new dimensions include 46 variables. 
+
+
+
+```{r selecting variables to keep}
+CFM5_17.removed.variables <- CFM5_17.uncleaned %>%
+  select(GPS.lat = `_GPS_latitude`,
+         GPS.long = `_GPS_longitude`,
+         Date_of_Evaluation = start,
+         Evaluator_ID,
+         Name_of_the_Village,
+         Location_Type,
+         HOH_First_Name,
+         HOH_Last_Name,
+         HOH_Date_of_Birth = HOH_Date_of_birth,
+         Respondant_First_Name,
+         Respondant_Last_Name,
+         Child_First_Name,
+         Child_Last_Name,
+         Child_Gender,
+         Child_Date_of_Birth,
+         BF = Child_s_Biological_Father,
+         BM = Child_s_Biological_Mother,
+         Respondant_relationship = `_08_Respondent_Relationship_to`,
+         CF1,
+         CF2,
+         CF3,
+         CF4,
+         CF5,
+         CF6,
+         CF7,
+         CF8,
+         CF9,
+         CF10,
+         CF11,
+         CF12,
+         CF13,
+         CF14,
+         CF15,
+         CF16,
+         CF17,
+         CF18,
+         CF19,
+         CF20,
+         CF21,
+         CF22,
+         CF23,
+         CF24,
+         E1 = `_25_Mumwaka_wamana_akakozyeka_kulesegwa`,
+         E2 = `_26_Mmwaka_wamana_m_uwa_akucinca_cikanda`,
+         E3 = `_27_Mumwaka_wamana_m_oyu_kuli_na_nyongene`,
+         E4 = `_28_Mumwaka_wamana_kazilukide_kumizeezo`,
+         E5 = `_29_Mumwaka_wamana_akuwa_akuluma_mulaka`,
+         E6 = `_30_Mumwaka_wamana_ilwa_kulijata_kusuba`,
+         E7 = `_31_Mumwaka_wamana_umaulu_nokuba_kumeso`,
+         E8 = `_32_Mumwaka_wamana_limwi_akuvwa_kununka`,
+         E9 = `_33_Mumwaka_wamana_idwe_bulwazi_bwakuwa`,
+         EN10 = `_34_Eeli_penzi_lyaka_na_buyo_ciindi_comwe`,
+         EN11 = `_35_Ipenzi_eeli_lyak_o_wakalivwide_ampeyo`,
+         EN12 = `_36_Ipenzi_eeli_lyak_e_mumalo_kucibbadela`)
+
+# The dimensions of the new dataset
+dim(CFM5_17.removed.variables)
+
+```
+
+
+### Additional data cleaning (dates)
+
+Any variables with data information also include time stamps, which we are not interested in. Thus, we will be modifying these variables to only show the full date. 
+
+```{r additional data cleaning}
+# Cleaning variables with date data 
+CFM5_17.cleaned.date <- CFM5_17.removed.variables %>%
+  mutate(Date_of_Evaluation = substr(Date_of_Evaluation, start = 1, stop = 10),
+         HOH_Date_of_Birth = substr(HOH_Date_of_Birth, start = 1, stop = 10),
+         Child_Date_of_Birth = substr(Child_Date_of_Birth, start = 1, stop = 10))
+
+```
+
+
+### Creating the variable Age
+
+It would be much easier to understand the age of our sample if we knew they age instead of going off ther date of birth. The following code will be calculating ages by taking into account the Child's DOB and the date the screener was administered.
+
+```{r creating the variable age}
+# Creating the variable age
+dob <- ymd(CFM5_17.cleaned.date$Child_Date_of_Birth)
+doe <- ymd(CFM5_17.cleaned.date$Date_of_Evaluation)
+
+age_weeks <- as.numeric(difftime(doe, dob, units = "weeks"))
+age <- age_weeks/52
+CFM5_17.cleaned.date$Child_age <- round(age,1)
+
+```
+
+
+### Creating a Head of Household and Child ID
+
+In upcoming scripts, we will need to identify which children from our sample are related to each other so then we can match them to see if they are eligible to participate. Initially, I was going to use the head of household (HOH) first and last name to help determine this. However, there are likely cases where there could be two separate HOH that share the same name. To avoid this, I included the date of birth of the HOH into their ID name. The script below creates this variable. The same logic applies to that of the Child. 
+
+```{r creating a head of household ID}
+# Clean up some values in some of the variables
+CFM5_17.HOH.ID <- CFM5_17.cleaned.date %>%
+  mutate(HOH_ID = paste(HOH_First_Name, 
+                        HOH_Last_Name, 
+                        HOH_Date_of_Birth),
+         Child_ID = paste(Child_First_Name,
+                          Child_Last_Name,
+                          Child_Date_of_Birth,
+                          Child_Gender))
+```
+
+
+### Save this cleaned data
+
+We will now- for reasons I do not remember- save this data to potentially further inspect it 
+
+```{r save the data for later inspection}
+# set working directory
+setwd("~/KBB_new_2/1_screener/processed_data")
+
+# save the data
+write.csv(x = CFM5_17.HOH.ID,
+          file = "CFM5_17_to_be_inspected.csv")
+
+```
+
+
+### Access to resources to help with difficulties
+
+
+```{r access to resources to help with difficulties}
+CFM5_17.HOH.ID <- CFM5_17.HOH.ID %>%
+  mutate(glasses = ifelse(CF1 == 1, "Yes", "No"),
+         hearing.aid = ifelse(CF4 == 1, "Yes", "No"),
+         walking.equipment = ifelse(CF7 == 1, "Yes", "No"))
+
+table(CFM5_17.HOH.ID$glasses)
+table(CFM5_17.HOH.ID$hearing.aid)
+table(CFM5_17.HOH.ID$walking.equipment)
+
+```
+
+
+
+
+### Major data transformation
+
+If we were to view the data from above, the great majority of the CFM questions would have values ranging from 1 to 4, which indicates the level of difficulty for the behavior the item questions about. The CFM questions we are interested in can be placed into two categories The first group relates to difficulties with perception and motor movement, the second group includes difficulty in communicating, learning, playing with others, and self-regulation. 
+
+First Category:
+
+CF3 = Difficulty seeing
+
+CF6 = Difficulty Hearing
+
+CF12 = Difficulty walking 100 meters
+
+CF13 = Difficulty walking 500 meters
+
+
+Second Category
+
+CF14 = Difficulties with self care
+
+CF15 = Difficulties with being understood inside
+
+CF16 = Difficulties with being understood outside
+
+CF17 = Difficulties with learning
+
+CF18 = Difficulties with remembering
+
+CF19 = Difficulties with concentrating
+
+CF20 = Difficulties with accepting challenge 
+
+CF21 = Difficulties with controlling behavior 
+
+CF22 = Difficulties making friends
+
+CF23 = Difficulties with anxiety
+
+CF24 = Difficulties with depression
+
+```{r changining CFM numeric values to categories}
+# Create a function to change numeric values to the associate difficulty severity
+difficulty_type_fun <- function(value) {
+  case_when(
+    value == 1 ~ "No difficulty",
+    value == 2 ~ "Some Difficulty",
+    value == 3 ~ "A lot of Difficulty",
+    value == 4 ~ "Cannot at all",
+    TRUE ~ as.character(value)
+  )
+}
+
+# This is for the mental health related questions 
+mental_health_freq_fun <- function(value) {
+  case_when(
+    value == 1 ~ "Daily",
+    value == 2 ~ "Weekly",
+    value == 3 ~ "Monthly",
+    value == 4 ~ "A few times a year",
+    value == 0 ~ "Never",
+    TRUE ~ as.character(value)
+  )
+}
+
+
+# Create new variables with these labels
+CFM5_17.CFM.labeled <- CFM5_17.HOH.ID %>%
+  mutate(CF3_Seeing = difficulty_type_fun(CF3),
+         CF6_Hearing = difficulty_type_fun(CF6),
+         CF12_Walking_100 = difficulty_type_fun(CF12),
+         CF13_Walking_500 = difficulty_type_fun(CF13),
+         CF14_Self_care = difficulty_type_fun(CF14),
+         CF15_Understood_Inside = difficulty_type_fun(CF15),
+         CF16_Understood_Outside = difficulty_type_fun(CF16),
+         CF17_Learning = difficulty_type_fun(CF17),
+         CF18_Remembering = difficulty_type_fun(CF18),
+         CF19_Concentrating = difficulty_type_fun(CF19),
+         CF20_Accepting_Challenge = difficulty_type_fun(CF20),
+         CF21_Controlling_Behavior = difficulty_type_fun(CF21),
+         CF22_Making_Friends = difficulty_type_fun(CF22),
+         CF23_Anxiety = mental_health_freq_fun(CF23),
+         CF24_Depression = mental_health_freq_fun(CF24)) 
+
+```
+
+
+### Data scoring
+
+The code is pretty complex and it was designed mostly with the help of ChatGPT but this is its function (visually inspected and it does what it was intended to do). We are defining the severity of the difficulty of a child by their highest reported difficulty rating for any of the CFM questions asked. This means that if we have a child, that has no problems whatsoever on all of the items but one, and on that item the level of difficulty is "Some Difficulty," then that would label the child overall has having "Some Difficulty." In another example, if we have a child who has most of the questions reported as "Some Difficulty" but there is one questions that is reported as "Cannot at all," then they will be labeled as cannot at all. This is what the code is doing to the CFM questions. 
+
+Additionally, I am using this function to create two variables. The first is to categorize children's difficulty by how it is definined in the CFM manual. This includes incorporating all questions in the CFM. The second is by how our KBB study is interested in defining the difficulty, which is by only looking at non perception/motor difficulty questions. 
+
+
+```{r data scoring}
+# Weird ChatGPT function
+CFM_opr_fun <- function(...) {
+  # Use pmap to iterate over rows
+  pmap_chr(list(...), function(...) {
+    if ("Cannot at all" %in% c(...)) {
+      return("Cannot at all")
+      
+    } else if ("A lot of Difficulty" %in% c(...)) {
+      return("A lot of Difficulty")
+      
+    } else if ("Some Difficulty" %in% c(...)) {
+      return("Some Difficulty")
+      
+    } else {
+      return("No difficulty")
+    }
+  })
+}
+
+# Weird ChatGPT function
+mental_health_opr_fun <- function(...) {
+  # Use pmap to iterate over rows
+  pmap_chr(list(...), function(...) {
+    if ("Daily" %in% c(...)) {
+      return("Daily")
+      
+    } else if ("Weekly" %in% c(...)) {
+      return("Weekly")
+      
+    } else if ("Monthly" %in% c(...)) {
+      return("Monthly")
+      
+    } else if ("A few times a year" %in% c(...)) {
+      return("A few times a year")
+      
+    } else {
+      return("Never")
+    }
+  })
+}
+
+CFM5_17 <- CFM5_17.CFM.labeled %>%
+  mutate(CFM_DD = CFM_opr_fun(CF3_Seeing, 
+                              CF6_Hearing, 
+                              CF12_Walking_100, 
+                              CF13_Walking_500,
+                              CF14_Self_care,
+                              CF15_Understood_Inside,
+                              CF16_Understood_Outside,
+                              CF17_Learning,
+                              CF18_Remembering,
+                              CF19_Concentrating,
+                              CF20_Accepting_Challenge,
+                              CF21_Controlling_Behavior,
+                              CF22_Making_Friends))
+
+CFM5_17 <- CFM5_17 %>%
+  mutate(KBB_CFM_DD = CFM_opr_fun(CF14_Self_care,
+                              CF15_Understood_Inside,
+                              CF16_Understood_Outside,
+                              CF17_Learning,
+                              CF18_Remembering,
+                              CF19_Concentrating,
+                              CF20_Accepting_Challenge,
+                              CF21_Controlling_Behavior,
+                              CF22_Making_Friends))
+
+
+CFM5_17 <- CFM5_17 %>%
+  mutate(DD_mental = mental_health_opr_fun(CF23_Anxiety,
+                                           CF24_Depression))
+
+```
+
+### Combining behavioral reports and mental health related reports
+
+```{r reducing dimentions of combining mental and behaviors}
+# Modify CFM_DD just to include information from both behaviors and mental health
+CFM5_17 <- CFM5_17 %>%
+  mutate(CFM_DD = paste(CFM_DD,"/",DD_mental,sep=""))
+
+```
+
+
+
+### Number of difficulties each child has (CFM and KBB definitions of DD)
+
+It is also interesting for us to know exactly how many different domains the child has difficulty in. We can do this by almost working backwards a bit, and recording our labeled data back into numbers. Except this time, no difficulty will be represented as 0 and any type of reported difficulty will be converted to a 1. Then we can just sum the number of 1's for each CFM question to get this variable.
+
+We will be doing this to our variable that is looking for how the CFM defines DD and the variable that defines DD in accordance with the KBB study. 
+
+
+```{r getting number of domains there are reported difficulties}
+# Obtaining the number of domains that there is reported difficulty in
+`%nin%` = Negate(`%in%`)
+
+CFM5_17$CFM_DD_num <- CFM5_17 %>%
+  transmute(CF3_Seeing = ifelse(CF3_Seeing == "No difficulty", 0, 1 ),
+            CF6_Hearing = ifelse(CF6_Hearing == "No difficulty", 0, 1  ),
+            CF12_Walking_100 = ifelse(CF12_Walking_100 == "No difficulty", 0, 1  ),
+            CF13_Walking_500 = ifelse(CF13_Walking_500 == "No difficulty", 0, 1  ),
+            CF14_Self_care = ifelse(CF14_Self_care == "No difficulty", 0, 1  ),
+            CF15_Understood_Inside = ifelse(CF15_Understood_Inside == "No difficulty", 0, 1  ),
+            CF16_Understood_Outside = ifelse(CF16_Understood_Outside == "No difficulty", 0, 1  ),
+            CF17_Learning = ifelse(CF17_Learning == "No difficulty", 0, 1  ),
+            CF18_Remembering = ifelse(CF18_Remembering == "No difficulty", 0, 1),
+            CF19_Concentrating = ifelse(CF19_Concentrating == "No difficulty", 0, 1),
+            CF20_Accepting_Challenge = ifelse(CF20_Accepting_Challenge == "No difficulty", 0, 1),
+            CF21_Controlling_Behavior = ifelse(CF21_Controlling_Behavior == "No difficulty", 0, 1),
+            CF22_Making_Friends = ifelse(CF22_Making_Friends == "No difficulty", 0, 1),
+            CF23_Anxiety = ifelse(CF23_Anxiety %nin% c("Daily","Weekly"), 0, 1),
+            CF24_Depression = ifelse(CF24_Depression %nin% c("Daily","Weekly"), 0, 1)) %>%
+  rowSums()
+
+
+CFM5_17$KBB_DD_num <- CFM5_17 %>%
+  transmute(CF14_Self_care = ifelse(CF14_Self_care == "No difficulty", 0, 1  ),
+            CF15_Understood_Inside = ifelse(CF15_Understood_Inside == "No difficulty", 0, 1  ),
+            CF16_Understood_Outside = ifelse(CF16_Understood_Outside == "No difficulty", 0, 1  ),
+            CF17_Learning = ifelse(CF17_Learning == "No difficulty", 0, 1  ),
+            CF18_Remembering = ifelse(CF18_Remembering == "No difficulty", 0, 1),
+            CF19_Concentrating = ifelse(CF19_Concentrating == "No difficulty", 0, 1),
+            CF20_Accepting_Challenge = ifelse(CF20_Accepting_Challenge == "No difficulty", 0, 1),
+            CF21_Controlling_Behavior = ifelse(CF21_Controlling_Behavior == "No difficulty", 0, 1),
+            CF22_Making_Friends = ifelse(CF22_Making_Friends == "No difficulty", 0, 1),
+            CF23_Anxiety = ifelse(CF23_Anxiety %nin% c("Daily","Weekly"), 0, 1),
+            CF24_Depression = ifelse(CF24_Depression %nin% c("Daily","Weekly"), 0, 1)) %>%
+  rowSums()
+
+
+```
+
+### Organizing all reported difficulties into one variable
+
+```{r organizing all difficulties into one variable}
+# First for CFM questions 
+CFM_data <- CFM5_17 %>% select(CF3_Seeing, 
+                               CF6_Hearing, 
+                               CF12_Walking_100, 
+                               CF13_Walking_500,
+                               CF14_Self_care,
+                               CF15_Understood_Inside,
+                               CF16_Understood_Outside,
+                               CF17_Learning,
+                               CF18_Remembering,
+                               CF19_Concentrating,
+                               CF20_Accepting_Challenge,
+                               CF21_Controlling_Behavior,
+                               CF22_Making_Friends,
+                               CF23_Anxiety,
+                               CF24_Depression)
+
+
+CFM_data[is.na(CFM_data)] <- "No difficulty"
+
+CFM_DD_type_list <- list()
+for(ii in 1:nrow(CFM_data)) {
+  current_row <- CFM_data[ii,]
+  current_row_name <- names(current_row)
+  current_CFM_DD_type_list <- list()
+  
+  for(iii in 1:length(current_row)) {
+    
+    if(current_row[[iii]] %nin% c("No difficulty", "Never", "A few times a year", "Monthly" )) {
+      
+      current_CFM_DD_type_list[[iii]] <- current_row_name[iii]
+      
+    } 
+  }
+  CFM_DD_type_list[[ii]] <- paste(current_CFM_DD_type_list %>% unlist(), collapse="; ")
+}
+
+
+
+CFM5_17$CFM_DD_type <- CFM_DD_type_list %>% unlist()
+
+# Next for how KBB is operationalizing it 
+KBB_data <- CFM5_17 %>% select(CF14_Self_care,
+                               CF15_Understood_Inside,
+                               CF16_Understood_Outside,
+                               CF17_Learning,
+                               CF18_Remembering,
+                               CF19_Concentrating,
+                               CF20_Accepting_Challenge,
+                               CF21_Controlling_Behavior,
+                               CF22_Making_Friends,
+                               CF23_Anxiety,
+                               CF24_Depression)
+
+
+KBB_data[is.na(KBB_data)] <- "No difficulty"
+
+KBB_DD_type_list <- list()
+for(ii in 1:nrow(KBB_data)) {
+  current_row <- KBB_data[ii,]
+  current_row_name <- names(current_row)
+  current_KBB_DD_type_list <- list()
+  
+  for(iii in 1:length(current_row)) {
+    
+    if(current_row[[iii]] %nin% c("No difficulty", "Never", "A few times a year", "Monthly" )) {
+      
+      current_KBB_DD_type_list[[iii]] <- current_row_name[iii]
+      
+    } 
+    
+    
+  }
+  KBB_DD_type_list[[ii]] <- paste(current_KBB_DD_type_list %>% unlist(), collapse="; ")
+}
+
+CFM5_17$KBB_DD_type <- KBB_DD_type_list %>% unlist()
+
+```
+
+
+### Organizing all reported 'at least A LOT OF difficulties' into one variable AND MENTAL HEALTH TOO
+
+If a value contains 'A lot of difficulty' or 'Cannot at all', then that variable name will be saved into a special variable. Additionally we need to add mental health variables IF they are daily!
+
+This code has been manually inspected and it works as intended. 
+
+```{r organizing at least a lot of difficulties into one variable}
+# Create a list to contain at least a lot of difficulty functional domains
+atleast.alot.list <- list()
+
+# Create a loop for every single row in the data frame (which corresponds to every child)
+for(ii in 1:nrow(CFM_data)) {
+
+  # First extract the row of interest
+  current.row <- CFM_data[ii,]
+  
+  # Save the column names as it's own object
+  column.names <- names(CFM_data)
+  
+  # Keep column names that contain "A lot of difficulty" present or "Cannot at all" as a cell value
+  alot.difficulty <- column.names[current.row == "A lot of Difficulty" |  current.row == "Cannot at all"]
+  
+  # convert any difficulties into one cell 
+  alot.difficulty.collapsed <- paste(alot.difficulty, collapse = "; ")
+  
+  # Create an if statement for saving the data
+  if(length(nchar(alot.difficulty)) == 0) {
+    atleast.alot.list[[ii]] <- ""   
+  } else {
+    atleast.alot.list[[ii]] <- alot.difficulty.collapsed
+  }
+    
+}
+
+# Save this information in the CFM5_17 object
+CFM5_17$CFM.atleast.alot <- do.call(c, atleast.alot.list)
+
+# Now we need to repeat this process but with DAILY related problems. Once we obtain this we will merge them together using the paste function
+daily.list <- list()
+
+# Create a loop for every single row in the data frame (which corresponds to every child)
+for(ii in 1:nrow(CFM_data)) {
+
+  # First extract the row of interest
+  current.row <- CFM_data[ii,]
+  
+  # Save the column names as it's own object
+  column.names <- names(CFM_data)
+  
+  # Keep column names that contain "A lot of difficulty" present or "Cannot at all" as a cell value
+  daily.difficulty <- column.names[current.row == "Daily"]
+  
+  # convert any difficulties into one cell 
+  daily.difficulty.collapsed <- paste(daily.difficulty, collapse = "; ")
+  
+  # Create an if statement for saving the data
+  if(length(nchar(daily.difficulty)) == 0) {
+    daily.list[[ii]] <- ""   
+  } else {
+    daily.list[[ii]] <- daily.difficulty.collapsed
+  }
+    
+}
+
+# Save this information in the CFM5_17 object
+CFM5_17$daily.difficulty <- do.call(c, daily.list)
+
+# Introduce this variable into the at.leat.alot variable
+CFM5_17 <- CFM5_17 %>%
+  mutate(CFM.atleast.alot = ifelse(daily.difficulty != "",
+                                   paste(CFM.atleast.alot,daily.difficulty,sep="; "),
+                                   CFM.atleast.alot))
+
+```
+
+
+
+### Scoring Epilepsy
+
+We are using the Birbeck Epilepsy Screening Questionnaire. It is comprised of 12 questions. The first 9 questions when answered as 'positive' will indicate that the child may have epilepsy if the remaining 3 questions are reported as negative. 
+
+```{r scoring epilepsy}
+epilepsy_positive_questions <- CFM5_17 %>%
+  select(E1,
+         E2,
+         E3,
+         E4,
+         E5,
+         E6,
+         E7,
+         E8,
+         E9)
+
+epilepsy_negative_questions <- CFM5_17 %>%
+  select(EN10,
+         EN11,
+         EN12)
+
+# Any NA's present convert them into 0's
+epilepsy_positive_questions[is.na(epilepsy_positive_questions)] <- 0
+epilepsy_negative_questions[is.na(epilepsy_negative_questions)] <- 0
+
+# Score if epilepsy is present or not
+
+epilepsy <- list()
+
+for (ii in 1:nrow(epilepsy_positive_questions)) {
+  if(any(epilepsy_positive_questions[ii,] > 0)) {
+    if (any(epilepsy_negative_questions[ii,] == 1)) {
+      epilepsy[[ii]] <- "No"
+    } else {
+      epilepsy[[ii]] <- "Yes"
+    }
+  } else {
+    epilepsy[[ii]] <- "No"
+  }
+}
+
+# Add this back to the screener
+CFM5_17$Epilepsy <- unlist(epilepsy)
+
+
+```
+
+
+### Creating our final KBB DD variable
+
+
+In the sections from above, there was a discussion about what is considered DD from the CFM definition and DD from the KBB study. However, there is more to the definition of DD by KBB. We also need to include information from epilepsy. Therefore our final sample will contain the following four group conditions.
+
+1) Child with no DD and no epilepsy
+
+2) Child with CFM DD - included into the study as DD
+
+3) Child with epilepsy - included into the study as DD
+
+4) Child with CFM DD and epilepsy - included into the study as DD
+
+
+```{r creating our final KBB DD variable}
+
+CFM5_17 <- CFM5_17 %>%
+  mutate(KBB_DD_status = case_when(
+    Epilepsy == "Yes" ~ "Yes",
+    KBB_CFM_DD != "No difficulty" ~ "Yes",
+    DD_mental %in% c("Daily", "Weekly") ~ "Yes",
+    TRUE ~ "No"
+  ))
+
+
+```
+
+### Creating our final CFM DD variable
+
+```{r creating our final CFM DD variable}
+
+CFM5_17 <- CFM5_17 %>%
+  mutate(CFM_DD_status = ifelse(CFM_DD_at_some == "Some Difficulty","Yes", "No"))
+
+```
+
+
+
+
+### 'Cannot at all' Sensory difficulties exclusion
+
+We want to develop a variable that indicates to us if a Child has "Cannot at All" for any of the sensory/motor questions. They will be labeled for exclusion because it will be difficulty to collect data from them. 
+
+```{r sensory difficulties exclusion}
+# Extract only the sensory questions
+CFM5_17_physical_questions <- CFM5_17 %>%
+  select(CF3_Seeing,
+         CF6_Hearing,
+         CF12_Walking_100,
+         CF13_Walking_500)
+
+# Some data cleaning
+CFM5_17_physical_questions[is.na(CFM5_17_physical_questions)] <- "No difficulty"
+
+
+# Create a for loop to obtain the rows that have "Cannot at all" for sensory or motor difficulties
+physical_difficulty_type <- list()
+
+for(ii in 1:nrow(CFM5_17_physical_questions)) {
+  current_row <- CFM5_17_physical_questions[ii,]
+  
+  if(any(current_row == "Cannot at all")) {
+    physical_difficulty_type[[ii]] <- "Cannot at all"
+    
+  } else if (any(current_row == "A lot of Difficulty")){
+    physical_difficulty_type[[ii]] <- "A lot of Difficulty"
+    
+  } else if (any(current_row == "Some Difficulty")) {
+    physical_difficulty_type[[ii]] <- "Some Difficulty"
+    
+  } else {
+    physical_difficulty_type[[ii]] <- "No difficulty"
+    
+  }
+  
+}
+
+CFM5_17$Physical_difficulty_type <- unlist(physical_difficulty_type)
+
+# Create an exclusion variable
+CFM5_17 <- CFM5_17 %>%
+  mutate(Excluded = case_when(
+    KBB_DD_status == "Yes" & Physical_difficulty_type == "Cannot at all" ~ "Yes",
+    KBB_DD_status == "No" & Physical_difficulty_type != "No difficulty" ~ "Yes",
+    TRUE ~ "No"
+  ))
+```
+
+### Saving the data
+
+
+```{r save the data}
+# Set working directory to save the data
+setwd("~/KBB_new_2/1_screener/processed_data")
+
+# Save the data
+write.csv(CFM5_17, file = "CFM5_17_clean.csv")
+
+```

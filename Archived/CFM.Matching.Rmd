@@ -1,0 +1,456 @@
+---
+title: "CFM Matching DD to non-DD"
+author: "Leandro Ledesma"
+date: "2024-02-24"
+output: html_document
+---
+
+### Universal block code settings
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+### Load in the data manipulation packages first
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(openxlsx) # To save excel files with multiple tabs
+
+```
+
+### Load in the data
+
+
+```{r load in the data, warning = FALSE}
+# Set working directory
+setwd("~/KBB_new_2/1_screener/processed_data")
+
+# Load in all data to be matched
+CFM2_4 <- read.csv("CFM2_4_clean.csv")
+CFM5_17 <- read.csv("CFM5_17_clean.csv")
+
+```
+
+
+### Combine the CFM2-4 and CFM5-17 datasets
+
+Before we can start matching between siblings with and without DD based on the criteria from the KBB study, we need to take our two CFM datasets and combine them into one. To do this, we will be using the rbind() function, which basically stacks on dataframe on top of other. However, certain requirements need to be met for this to work. First, the number of variables between datasets must be the same number, and the names must match in order. The CFM datasets, however, have variables that represent the responses to different questions, and they are not all the same. So, we will be keeping the variables for both datasets that match, and then bind these datasets into one. 
+
+```{r combining datasets}
+
+CFM2_4 <- CFM2_4 %>%
+  select(HOH_ID, 
+         Date_of_Evaluation, 
+         Evaluator_ID, 
+         Name_of_the_Village,
+         Location_Type,
+         HOH_First_Name,
+         HOH_Last_Name,
+         Respondant_First_Name,
+         Respondant_Last_Name,
+         Respondant_relationship,
+         Child_First_Name,
+         Child_Last_Name,
+         Child_Gender,
+         Child_age,
+         Child_Date_of_Birth,
+         BF,
+         BM,
+         glasses,
+         hearing.aid,
+         walking.equipment,
+         Seeing = CF3_Seeing,
+         Hearing = CF6_Hearing,
+         Walking = CF10_Walking,
+         Physical_difficulty_type,
+         CFM_DD,
+         KBB_CFM_DD,
+         CFM_DD_type,
+         KBB_CFM_DD_type,
+         Epilepsy,
+         KBB_DD_status,
+         Child_ID)
+
+CFM5_17 <- CFM5_17 %>%
+  select(HOH_ID, 
+         Date_of_Evaluation, 
+         Evaluator_ID, 
+         Name_of_the_Village,
+         Location_Type,
+         HOH_First_Name,
+         HOH_Last_Name,
+         Respondant_First_Name,
+         Respondant_Last_Name,
+         Respondant_relationship,
+         Child_First_Name,
+         Child_Last_Name,
+         Child_Gender,
+         Child_age,
+         Child_Date_of_Birth,
+         BF,
+         BM,
+         glasses,
+         hearing.aid,
+         walking.equipment,
+         Seeing = CF3_Seeing,
+         Hearing = CF6_Hearing,
+         Walking = CF10_Walking,
+         Physical_difficulty_type,
+         CFM_DD,
+         KBB_CFM_DD,
+         CFM_DD_type,
+         KBB_CFM_DD_type,
+         Epilepsy,
+         KBB_DD_status,
+         Child_ID)
+
+
+# Create a variable indicating the screener type
+CFM2_4$Screener.Type <- rep("CFM2_4", nrow(CFM2_4))
+CFM5_17$Screener.Type <- rep("CFM5_17", nrow(CFM5_17))
+
+# Bind the datasets into one
+CFM_data_before_exclusion <- rbind(CFM2_4, CFM5_17)
+
+# Total number of children
+Total.num.children <- length(unique(CFM_data_before_exclusion$Child_ID))
+```
+
+
+### Remove Children that have been marked for exclusions
+
+There are two different exclusion criteria. The first, any child that was identified to not have DD cannot have any problems with any sensory or motor domains. Thus, any nonDD child that has difficulties in these domains will be excluded. When it comes to those identified to have DD, the exclusion criteria is much more loose. Since cognitive related DD is highly associated with difficulties in movement or sensory, then they will be allowed to participate. The only exception is if their problems in these domains are so severe that we cannot collect reliable data from them. Thus, any DD identified child with 'Cannot at all' for any of the sensory or motor related items will be excluded.  
+
+
+```{r remove children marked for exclusion}
+# Remove only the children with difficulties in vision, hearing, and motor
+# But only for those without cognitive difficulties
+exclude_no_DD <- CFM_data_before_exclusion %>% filter(sen_mot_difficulty == "Yes" & KBB_DD_status == "No")
+exclude_DD <- CFM_data_before_exclusion %>% filter(sen_mot_severity == "Cannot at all" & KBB_DD_status == "Yes")
+
+# Remove no DD children with at least 'Some difficulty' in the sensory/motor domains
+CFM_data_exclude_no_DD <- CFM_data_before_exclusion %>% 
+  filter(!(Child_ID %in% exclude_no_DD$Child_ID))
+
+# Remove children that have 'Cannot do at all disabilities'  in the sensory/motor domains
+CFM_data <- CFM_data_exclude_no_DD %>% 
+  filter(!(Child_ID %in% exclude_DD$Child_ID))
+
+# Excluded num of children
+Total.noDD.excluded <- length(unique(exclude_no_DD$Child_ID))
+Total.DD.excluded <- length(unique(exclude_DD$Child_ID))
+
+# The children that made it through the first exclusion criteria
+Survived.exclusion.num <- length(unique(CFM_data$Child_ID))
+```
+
+
+### Creating a matching system (Part 1)
+
+First we will be creating a list that will take the values from HOH_ID. As a reminder from the previous scripts, the HOH_ID is a variable created that is made from the the HOH first and last name and their date of birth. This was done as a way for me and the code to know which children are related to each other. If children from different rows have the same HOH_ID, then they are siblings or at least live in the same household. Thus, we will be creating a list from every unique HOH_ID and use that to group all rows into their appropriate households.
+
+
+```{r creating a matching system part 1}
+households <- unique(CFM_data$HOH_ID)
+households_list <- list()
+
+# Let all households have their own list
+for(ii in 1:length(households)) {
+  current_household <- households[ii]
+  households_list[[ii]] <-  CFM_data %>% filter(HOH_ID %in% current_household)
+  
+}
+
+
+
+```
+
+### Creating a matching system (Part 2)
+
+These screeners should be administered to parents at least twice. This is because our goal is to include children with siblings into our study since we need at least two to do a between group analysis (DD vs no DD). With that in mind, if any counts of HOH_ID come back to be one, then that means one of the two possibilities: a) the respondent was incorrectly administered the screener since there must be at least two children in the house or b) that one component of the HOH_ID was mistyped. Most likely it is the former, any mistyping in the first name, last name, or date of birth from the HOH will lead to more than one HOH_ID. 
+
+```{r creating a matching system part 2}
+one_child_household <- list()
+
+for(ii in 1:length(households_list)) {
+  
+  current_household <- households_list[[ii]]
+  
+  if(nrow(current_household) == 1) {
+    
+    one_child_household[[ii]] <- current_household 
+  }
+}
+
+potential_errors_households <- do.call(rbind, one_child_household) %>%
+  arrange(HOH_ID)
+
+# Obtain the dimensions of the potential error households
+dim(potential_errors_households)
+
+# Remove these children from CFM data
+CFM_data <- CFM_data %>%
+  filter(!(Child_ID %in% potential_errors_households$Child_ID))
+
+# Number of children removed because of an HOH_ID typo
+Typo.HOH_ID.exclusion.num <- length(unique(potential_errors_households$Child_ID))
+
+```
+
+### Creating a matching system (Part 3)
+
+Now we need to create a list where the HOH_ID is counted at least two times. The HOH_IDs in this list are very likely to be the correct spelling. 
+
+
+```{r creating a matching system part 3}
+two_or_more_child_household <- list()
+
+for(ii in 1:length(households_list)) {
+  
+  current_household <- households_list[[ii]]
+  
+  if(nrow(current_household) > 1) {
+    
+    two_or_more_child_household[[ii]] <- current_household 
+    
+  }
+  
+}
+
+correct_households_df <- do.call(rbind, two_or_more_child_household) %>%
+  arrange(HOH_ID)
+
+correct_housholds <- correct_households_df %>%
+  select(HOH_ID) %>%
+  unique()
+
+
+# Number of children that were a part of a household with at least one other sibling
+Children.with.sibling.num <- length(unique(correct_households_df$Child_ID))
+
+#Quality control
+intersect(correct_housholds$HOH_ID, potential_errors_households$HOH_ID)
+
+```
+
+### Creating a matching system (Part 4)
+
+This is the main code for the matching and it is pretty complex. It is essentially going into the list that contains at least 2 identical HOH_IDs, extracts the DD/noDD information from sibling children and then labels the HOH_IDs that have at least one DD and non-DD pair. The second part of the code takes the children that have matches and then matches them as closely as they can by age. For example, if one household has one DD child that is 5 years old and two non-DD siblings aged 6 and 16. The code will match the DD 5 year old with the 6 year old non-DD sibling. 
+
+```{r creating a matching system part 4}
+eligible_households <- list()
+
+for(ii in 1:length(two_or_more_child_household)) {
+
+current_list <- two_or_more_child_household[[ii]]
+
+if (length(unique(current_list$KBB_DD_status))>1) {
+  
+  eligible_households[[ii]] <- current_list
+  names(eligible_households)[[ii]] <- current_list$HOH_ID %>% unique()
+}
+
+}
+
+eligible_households <- Filter(Negate(is.null), eligible_households)
+
+
+eligible_households_df <- do.call(rbind,eligible_households )
+
+matched_names_per_household_DD_small <- list()
+matched_names_per_household_noDD_small <- list()
+
+for(i in 1:length(eligible_households)) {
+
+  current_eligible_household <- eligible_households[[i]]
+  dd_df <- current_eligible_household %>% filter(KBB_DD_status == "Yes")
+  nodd_df <- current_eligible_household %>% filter(KBB_DD_status == "No")
+  
+  dd_df <- dd_df %>%
+    mutate(HOH_ID) %>%
+    mutate(Child_ID) %>%
+    select(HOH_ID,
+           DD_Child = Child_ID,
+           Child_age)
+
+  
+  nodd_df <- nodd_df %>%
+    mutate(Child_ID) %>% 
+    select(nonDD_Child= Child_ID,
+           Child_age)
+  
+  DD_small_matched_names <- list()
+  noDD_small_matched_names <- list()
+
+  
+if(nrow(nodd_df) < nrow(dd_df)) {
+  for (ii in 1:nrow(nodd_df)) {
+    # Returns the observation of the DD child that is aged closest to noDD in que
+    DD_match <- dd_df[which.min(abs(dd_df$Child_age - nodd_df$Child_age[ii])), ] #needs ii
+    DD_match_no_age <- DD_match %>% select(-Child_age)
+    
+    # Returns the noDD child in que
+    noDD_match <- nodd_df[ii,] # needs ii
+    noDD_match_no_age <- noDD_match %>% select(-Child_age)
+    
+    # Convert into one observation
+    Final_match <- cbind(noDD_match_no_age,DD_match_no_age)
+    noDD_small_matched_names[[ii]] <- Final_match
+    
+    
+    # Remove the DD child chose for matching from the DD pool
+    dd_df <- dd_df[-which(dd_df$DD_Child == Final_match$DD_Child), ]
+    
+  }
+} else if (nrow(nodd_df) >= nrow(dd_df)) {
+  for (ii in 1:nrow(dd_df)) {
+    # Returns the observation of the DD child that is aged closest to DD in que
+    noDD_match <- nodd_df[which.min(abs(nodd_df$Child_age - dd_df$Child_age[ii])), ] #needs ii
+    noDD_match_no_age <- noDD_match %>% select(-Child_age)
+    
+    # Returns the DD child in que
+    DD_match <- dd_df[ii,] # needs ii
+    DD_match_no_age <- DD_match %>% select(-Child_age)
+    
+    # Convert into one observation
+    Final_match <- cbind(noDD_match_no_age,DD_match_no_age)
+    DD_small_matched_names[[ii]] <- Final_match
+    
+    
+    # Remove the DD child chose for matching from the DD pool
+    nodd_df <- nodd_df[-which(nodd_df$nonDD_Child == Final_match$nonDD_Child), ]
+    
+  }
+}
+
+  matched_names_per_household_DD_small[[i]] <- do.call(rbind,DD_small_matched_names)
+  matched_names_per_household_noDD_small[[i]] <- do.call(rbind,noDD_small_matched_names) 
+  
+  
+}
+
+
+# Bind all of the matched children into one dataset
+matched_data <- rbind(do.call(rbind,matched_names_per_household_DD_small),
+                      do.call(rbind,matched_names_per_household_noDD_small))
+
+matched_data <- matched_data %>%
+  select(HOH_ID, DD_Child, nonDD_Child) %>%
+  as_tibble()
+
+matched_data <- matched_data %>%
+  arrange(HOH_ID)
+
+eligible_children <- c(matched_data$DD_Child, matched_data$nonDD_Child)
+
+
+eligible_children_df <- CFM_data %>%
+  filter(Child_ID %in% eligible_children) %>%
+  arrange(HOH_ID)
+
+not_eligible_children_df <- CFM_data %>%
+  filter(!(Child_ID %in% eligible_children)) %>%
+  arrange(HOH_ID)
+
+# From the children that are eligible, reduce some variables so we can save this as an excel sheet 
+eligible_children_df2 <- eligible_children_df %>%
+    select(HOH_ID,
+           Name_of_the_Village,
+           HOH_First_Name,
+           HOH_Last_Name,
+           Respondant_First_Name, 
+           Respondant_Last_Name, 
+           BF, 
+           BM, 
+           Child_First_Name,
+           Child_Last_Name,
+           Child_Date_of_Birth, 
+           Respondant_relationship, 
+           KBB_DD_status) %>%
+  arrange(HOH_ID)
+```
+
+
+### Data Quality check
+
+Since we partioned the original dataset quite a bit into different sections, let's ensure that no children/rows got lost along the way. To do this, we are going to count the rows of the original dataset, and then take the sum of all the datasets we created and add them up. If the numbers matched then everyone was accounted for.
+
+```{r data quality check, echo = FALSE}
+paste("The original data set contains", nrow(CFM_data_before_exclusion),"rows")
+paste("Number of unique children in our dataset",Total.num.children)
+paste("We excluded",Total.noDD.excluded + Total.DD.excluded,"children.")
+paste(" -", Total.noDD.excluded,"non-DD children were excluded for having some type of sensory or motor difficulty")
+paste(" -", Total.DD.excluded,"DD children were excluded because they had Cannot at all for at least one sensory or motor domain")
+paste("Their exlusion left us with",Survived.exclusion.num,"children")
+paste(Typo.HOH_ID.exclusion.num, "children were temporarily removed because of an incorrect HOH_ID spelling")
+paste("After their removal, we were left with",Children.with.sibling.num,"children.")
+paste("From these eligible households,",nrow(eligible_children_df),"children were able to be matched and",nrow(not_eligible_children_df),"were not.")
+paste("Overall, we had",length(unique(eligible_households_df$HOH_ID)),"unique households that can participate" )
+paste("The sum of excluded children, children removed from not having a sibling, children with a match, and those without a match is:", 
+      (Total.DD.excluded + Total.noDD.excluded + Typo.HOH_ID.exclusion.num + nrow(eligible_children_df) + nrow(not_eligible_children_df)))
+
+
+```
+
+
+### Save the data
+
+The original function of this script was to match DD and non-DD children. However, there is still much more work to be done. Thus, we will be saving all of the different datasets that were created from this script for further inspection. We will be saving some datasets together in excel files that have different tabs. This is just to keep things organized. The data to be saved in their separate excel sheet is as follows.
+
+Excel 1: Children that were excluded for the following reasons
+    - no-DD children with at least 'some difficulty' for a sensory/motor domain
+    - DD children with 'Cannot at all' for a sensory/motor domain
+    - no-DD and DD children that did not have another sibling to be matched with
+    
+Excel 2: Children that are eligible
+    - Include all eligible siblings and will be given an ID to participate
+    
+     
+Excel 3: Head of Household IDs (for fuzzy matching)
+    - HOH_ID with one child
+    - HOH_ID with more than one children
+    
+Excel 4: Has all data of everyone
+    - This is important for the Giving ID script
+
+
+```{r save the data}
+# Save the data 
+# Set working directory
+setwd("~/KBB_new_2/1_screener/final_data")
+
+# Save excel sheet 1
+write.xlsx(list(excluded_no_DD = exclude_no_DD, 
+                excluded_DD = exclude_DD,
+                Unable_to_match = not_eligible_children_df), file = "All CFM Excluded Children and Why.xlsx")
+
+# Save excel sheet 2
+write.xlsx(list(eligible_children = eligible_children_df2), file = "All CFM Eligible Children.xlsx")
+
+
+# Save excel sheet 3
+write.xlsx(list(error_household = potential_errors_households,
+                correct_household = correct_households_df),
+           file =  "Potential_Household_errors.xlsx")
+
+# Save excel sheet 4
+write.xlsx(list(all_data = CFM_data_before_exclusion),
+           file =  "All Children.xlsx")
+
+```
+
+## Next steps (Please read)
+
+Excel 1 is really to keep for our records. We are not necessarily going to do anything with the contents in these excel files with the exception of reporting numbers of who did not make the cut.
+
+Excel 2 is very important. We now need to take these IDs and place them into a separate RMarkdown so we can give them ID's. This new created script CANNOT be linked to in the website since it contains identifiable information. 
+
+Excel 3 is also important. Just like above, we CANNOT save this information on the website. We will need to create another script to do fuzzy matching to inform our team members which ID's that need to be manually cleaned to hopefully increase our recruitment numbers. Additionally, this script could also report on any missing data or other types of mistakes that have been done during data collection. 
+
+Lastly, we need to create an additional script that reports back all of this information. It will be shared every Tuesday during out meetings.

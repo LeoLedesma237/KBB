@@ -1,0 +1,274 @@
+---
+title: "KBB Data Report"
+author: "Leandro Ledesma"
+date: "2024-02-27"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+library(openxlsx) # To save excel files with multiple tabs
+```
+
+### Part 1: Load in the data and create excluded children data frames
+
+We will load some of the data in the directory that saves data related to all screened children, children exclusion, children that were matched and those that did not have a match. Each dataset was given a child ID. This ID should represent a child and be unique to them. We will be using these IDs for quality control measures. 
+
+From the six datasets below, we have combined a few to make a total of three. They are as follows:
+
+- All Children
+- Excluded Children (excluded DD and excluded no DD)
+- Excluded Children no match (No match or had a match originally but a sibling was excluded)
+
+All of these datasets were checked below and shown to be independent of each other. Meaning, none of the ID's in 'Excluded Children' are present in 'Excluded children no match.' Additionally and kinda obviously, all the ID's in these two datasets are present in 'All Children'.
+
+```{r load in the data, warning = FALSE}
+# Set the working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB_new_2/1_screener/final_data")
+
+# Load in all useful data
+All.Children <- read_excel("All Children.xlsx")
+Excluded.Children.DD <- read_excel("All CFM Excluded Children and Why.xlsx", sheet = "excluded_DD")
+Excluded.Children.noDD <- read_excel("All CFM Excluded Children and Why.xlsx", sheet = "excluded_no_DD")
+Excluded.Children.NoMatch.org <- read_excel("All CFM Excluded Children and Why.xlsx", sheet = "Unable_to_match")
+One.House.Children <- read_excel("Potential_Household_errors.xlsx")
+
+# Rbind the excluded children into one (not counting those that were removed because of not having a match)
+Excluded.Children <- rbind(Excluded.Children.DD,
+                           Excluded.Children.noDD)
+
+# Rbind the no match and the one household children
+Excluded.Children.NoMatch <- Excluded.Children.NoMatch.org %>%
+  rbind(One.House.Children)
+
+# Give all of these final datasets a child.id for quality control
+All.Children <- All.Children %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+Excluded.Children <- Excluded.Children %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+Excluded.Children.NoMatch <- Excluded.Children.NoMatch %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+# rbind the sub datasets to check for duplicates
+Excluded.Children %>%
+  rbind(Excluded.Children.NoMatch) %>%
+  group_by(child.id) %>%
+  count() %>%
+  filter(n > 1)
+
+```
+
+### Part 2: Load in the data of matched children
+
+This next section is data from a different directory. These are children that were either matched to biological siblings or close relatives. These numbers will make the distinction. The data from these excel files have a different structure than those above. So we will need to index the children below from the `All.Children` data frame to obtain all the variables we will need for descriptive statistics of these groups.  
+
+```{r load in the data part 2, warning = FALSE}
+# Set the working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB_new_2/matched_siblings")
+
+# Load in more data
+Matched.Siblings <- read_excel("New ID Tracker.xlsx")
+Matched.No.Siblings <- read_excel("Subjects with different parents or other problems.xlsx")
+
+# Create a temporary ID for the children
+Matched.Siblings <- Matched.Siblings %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB))
+Matched.No.Siblings <- Matched.No.Siblings %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB))
+All.Children <- All.Children %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+# Indexing the data
+All.Matched.Siblings <- All.Children %>%
+  filter(child.id %in% Matched.Siblings$child.id)
+
+All.Matched.No.Siblings <- All.Children %>%
+  filter(child.id %in% Matched.No.Siblings$child.id)  
+
+```
+
+
+## Descriptive Statistics Table
+
+We are going to use for loops to obtain the frequencies of KBB defined DD, epilepsy and sex for each of the following data frames:
+
+- All Children
+- All Excluded Children
+- Unable to Match Children
+- Non-direct Sibling Matches
+- Direct Sibling Matches
+
+
+```{r descriptive statistics all children}
+# Create a list comprised of the data frames mentioned above
+data.frames.list <- list(All.Children,
+                         Excluded.Children,
+                         Excluded.Children.NoMatch,
+                         All.Matched.No.Siblings,
+                         All.Matched.Siblings)
+
+# Create a list to save the frequencies for each data frame
+frequencies.list <- list()
+
+# Run the for loop to obtain the frequencies of KBB defined DD, epilepsy and sex.
+for(ii in 1:length(data.frames.list)) {
+  
+  # Save the element of the list into an object
+  current.df <- data.frames.list[[ii]]
+  
+  # Obtain the desired frequencies using the table function
+  KBB.DD <- data.frame(KBB.DD = rbind(table(current.df$KBB_DD_status)))
+  Epilepsy <- data.frame(Epilepsy = rbind(table(current.df$epilepsy)))
+  Sex <- data.frame(Sex = rbind(table(current.df$Child_Gender)))
+  
+  # Create a new data frame with these frequencies displayed side by side
+  frequencies.list[[ii]] <- cbind(N = nrow(current.df), KBB.DD, Epilepsy, Sex)
+
+}
+
+# Turn the list into a dataframe
+frequencies.df <- do.call(rbind,frequencies.list)
+
+# Add percentages to the data frame
+frequencies.df <- frequencies.df %>%
+  mutate(KBB.DD.Yes.Per = round(KBB.DD.Yes/N,2)*100,
+         Epilepsy.Per = round(Epilepsy.Yes/N,2)*100,
+         Sex.male.per = round(Sex.male/N,2)*100)
+
+# Manually include the names of the datasets each row belongs to and add the sample size to it
+frequencies.df <- frequencies.df %>%
+  mutate(dataset = c("All Children Screened",
+                     "All Excluded Children",
+                     "Unable to Match Children",
+                     "Non-direct Sibling Matches",
+                     "Direct Sibling Matches/Recruited"),
+         dataset = paste(dataset," (n=",N,")",sep=""))
+
+# Change order of the variables and drop redundant ones
+frequencies.df2 <- frequencies.df %>%
+  select(dataset, KBB.DD.No, KBB.DD.Yes, KBB.DD.Yes.Per, Epilepsy.Yes, Epilepsy.Per, Sex.male, Sex.male.per)
+
+# Change the names of these variables
+names(frequencies.df2) <- c("_",
+                            "noDD",
+                            "DD",
+                            "DD(%)",
+                            "Epilepsy",
+                            "Epilepsy(%)",
+                            "Male",
+                            "Male(%)")
+
+# Print the data set
+frequencies.df2 %>%
+  kbl(caption = "Table 1: Frequency of DD, Epilepsy and Sex for different datasets") %>%
+  kable_paper(bootstrap_options = "striped", full_width = F)
+```
+
+
+## Disaggregating the data for all screened children
+
+This next portion is to automate the numbers that would be reported in future poster analysis or NIH reports. This is for **all screener data** collected by our research team. Here are the focus of interest:
+
+- frequency of DD between boys and girls
+- frequency of epilepsy between boys and girls
+- frequency of DD types between boys and girls CFM2_4
+- frequency of DD types between boys and girls CFM5_17
+
+### Frequency of KBB DD and epilepsy between boys and girls
+
+The table below shows all the children that would have DD based on how the KBB project defines DD. This means that a child will have either at least 'some difficulty' in one or more cognitive/behavioral domains and/or have epilepsy. The table breaks these numbers down by sex. Additionally, there is information for epilepsy status. 
+
+
+```{r disaggregating the data1}
+# Transform KBB_DD_status into a factor
+All.Children <- All.Children %>% 
+  mutate(KBB_DD_status = factor(KBB_DD_status,levels = c("Yes","No"), labels = c("CFM DD/Epilepsy", "No DD")),
+         epilepsy = factor(epilepsy, levels = c("Yes","No"), labels = c("Epilepsy Only", "No Epilepsy")))
+
+# Create a data frame for the frequency of DD by Sex and Epilepsy by Sex
+KBB.DD.by.Sex <- data.frame(cbind(table(All.Children$KBB_DD_status, All.Children$Child_Gender)))
+Epilepsy.by.Sex <- data.frame(cbind(table(All.Children$epilepsy, All.Children$Child_Gender)))
+
+# Combine these into two
+rbind(KBB.DD.by.Sex,
+      Epilepsy.by.Sex) %>%
+  mutate(n = female + male) %>%
+  kbl(caption = "Frequency of KBB DD/Epilepsy and Epilepsy only by Sex") %>%
+  kable_paper(full_width = F) %>%
+  pack_rows("KBB DD and No DD", 1, 2) %>%
+  pack_rows("Epilepsy Status", 3, 4) 
+```
+
+### Frequency of DD types between boys and girls CFM2_4 and CFM5_17
+
+Below are two tables that show the frequency of kinds of difficulties a child could have based on the CFM reportings. Children that are ages 3-4 are screened with the CFM2-4, which is shown in the table on the left. Since there are not many children in this age range, the sample size is pretty small. On the other hand, children that are ages 5-18 are screened with the CFM5-17, which is shown in the table on the right. This screener ask more questions than the CFM2-4, so we would expect a larger list of problems. Additionally, both tables show the frequency of reported difficulties by sex. Lastly, these tables are showing overlap- meaning that a child could have problems in more than one domain and their responses would be present in these tables. 
+
+```{r disaggregating the data2,}
+# Nest the data of Sex for DD children
+All.Children.Sex.Nested <- All.Children %>%
+  filter(KBB_DD_status == "CFM DD/Epilepsy") %>%
+  group_by(Child_Gender, Screener.Type) %>%
+  nest()
+
+# Frequency table list for both Sexes
+DD.Type.Frequency.By.Sex <- list()
+
+# Run this function on that nested data boi
+for(ii in 1:4) {
+  
+  # Extract the current nested data
+  current.nest <- All.Children.Sex.Nested$data[[ii]]
+  
+  # Obtain the number of Types of difficulties
+  all.DD.types <- do.call(c,str_split(current.nest$KBB_DD_type, pattern = "; "))
+  
+  # Remove NA's from the vector
+  all.DD.types <- all.DD.types[complete.cases(all.DD.types)]
+  
+  # Convert them into a Frequency Table
+  all.DD.types.df <- data.frame(cbind(table(all.DD.types)))
+  
+  # Name the Frequency Table by sex
+  names(all.DD.types.df) <- paste(All.Children.Sex.Nested$Child_Gender[[ii]],
+                                  ".Frequency (n=",nrow(current.nest),")", sep ="")
+  
+  # Add the row names as a variable
+  all.DD.types.df$DD.Types <- row.names(all.DD.types.df)
+  
+  # Save this Frequency table into a list
+  DD.Type.Frequency.By.Sex[[ii]] <- all.DD.types.df
+}
+
+# Join the datasets by DD.Types CFM2_4
+DD.Type.Freq.By.Sex2_4 <- do.call(full_join, DD.Type.Frequency.By.Sex[1:2]) %>%
+  select(DD.Types, everything())
+
+# Join the datasets by DD.Types CFM5_17
+DD.Type.Freq.By.Sex5_17 <- do.call(full_join, DD.Type.Frequency.By.Sex[3:4]) %>%
+  select(DD.Types, everything())
+
+# Print out the table
+DD.Type.Freq.By.Sex2_4 %>%
+  kbl(caption = "CFM2_4: Types of reported difficulties by sex") %>%
+  kable_paper(full_width = F,  position = "float_left")
+  
+  # Print out table
+DD.Type.Freq.By.Sex5_17 %>%
+  kbl(caption = "CFM5_17: Types of reported difficulties by sex") %>%
+  kable_paper(full_width = F, position = "right")
+
+```

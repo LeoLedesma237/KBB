@@ -1,0 +1,330 @@
+---
+title: "Analyzing the PSQ"
+author: "Leandro Ledesma"
+date: "2024-05-12"
+output: html_document
+---
+
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+library(openxlsx) # To save excel files with multiple tabs
+library(ggpubr)
+```
+
+
+```{r load in the PSQ data, warning = FALSE}
+# Set working directory
+setwd("~/KBB_new_2/2_behavioral_assessments/Adults/Perceived_Stigma_Questionnaire_(PSQ)/raw_data")
+
+# Load in the data
+PSQ <- read_excel("PSQ_Screener.xlsx")
+
+```
+
+### Get to know our data
+
+Using the glimpse function shows that there are 46 variables in this dataset and 118 responses (this number will change throughout data collection). The questions of interest start at _1 and end at _18. When looking at the Perceived Stigma Questionnaire document, the Family Stigma Instrument (FAMSI), which is the real name of our questionnaire, indicates that there are several items with 5 factors. Data was not collected for Factor 1 since these are questions that 'take the perspective of someone not related to an individual with a disability.', Additionally, even though data was collected for Factor 5 (Q13-18), it will no be included into our analysis since they are related to positive aspects of caregiving and not stigma. Thus, the remaining questions to be analyzed which are part of three different factors are:
+
+- Factor 2 (items 1-4): Affective affiliate stigma
+- Factor 3 (items 5-8): Cognitive affiliate stigma
+- Factor 4 (items 9-12): Behavioral affiliate stigma
+
+
+```{r get to know our data}
+# Use the glimpse function to see all of the variables in place
+#glimpse(PSQ)
+
+# Extract the variables of interest which are ID #, gender, and the items from above
+PSQ2 <- PSQ %>%
+  select(Child_Study_ID, Respondent_Gender, `_1_Ndilivwa_kuusa_ku_u_uujisi_buyumu_yumu`:`_18_Kubambilila_mwan_u_amikwasyi_beenzuma`)
+
+# Rename the variables
+names(PSQ2) <- c("ID", "Gender", paste("Q",1:18,sep=""))
+
+# Remove QUestions from Factor 5
+PSQ2 <- PSQ2 %>%
+  select(-c(Q13, Q14, Q15, Q16, Q17))
+```
+
+### PSQ Screener (FAMSI) Quality control
+
+```{r PSQ Screener Quality Control, results='asis'}
+cat("1) There are",nrow(PSQ2),"responses to the FAMSI dataset.\n\n")
+cat("2) There are",length(unique(PSQ2$ID)),"unique ID's in the FAMSI dataset.\n\n")
+cat("3) The following ID's are duplicates that need to be corrected for:",paste(PSQ2$ID[duplicated(PSQ2$ID)], collapse = ", "),"\n\n")
+cat("4) There are",sum(is.na(PSQ2)),"case(s) of missing data in this dataset.\n\n")
+cat("5) In the meantime, any duplicate ID's and ID's with missing data will be dropped from further analysis until corrected for.\n\n")
+
+
+
+PSQ2 %>%
+  filter(!complete.cases(.)) %>%
+  kbl(caption = " All ID's that are missing data") %>%
+  kable_paper()
+
+
+```
+
+#### Dropping ID's with duplicate ID's code and/or missing data
+
+```{r dropping duplicate IDs from further analysis}
+# Drop any duplicate ID's
+duplicate.IDs <- PSQ2$ID[duplicated(PSQ2$ID)]
+
+# Remove them from the dataset
+PSQ2 <- PSQ2 %>%
+  filter(!(ID %in% duplicate.IDs))
+
+# Remove any rows with missing data
+PSQ2 <- PSQ2 %>%
+  filter(complete.cases(.))
+```
+
+
+### Introducing DD Type from the screener information
+
+Below we will load two datasets that differ from above. The first dataset contains some demographic information from our recruited sample plus their ID's, the second contains all of the information from the screener that we need- this does not contain ID's. We will join these datasets together to extract the types of DD our sample may have.
+
+
+```{r load in the information from the IDs, warning = FALSE}
+# Load in the information of children recruited into the study
+setwd("~/KBB_new_2/matched_siblings")
+
+# Load in their data
+Recruited.Children <- read_excel("New ID Tracker.xlsx")
+
+# Modify the variable 'x' to include DOB
+Recruited.Children <- Recruited.Children %>%
+  mutate(x = paste(x, Child_DOB))
+
+# Load in the data of all screened children that have been scored
+setwd("~/KBB_new_2/1_screener/final_data")
+
+# Load in their data
+All.Screened.Children <- read_excel("All Children.xlsx")
+
+# Create the variable 'x' for All.Screened.Children so we can match them to Recruited.Children
+All.Screened.Children <- All.Screened.Children %>% 
+  mutate(x = paste(HOH_First_Name, HOH_Last_Name, Child_First_Name, Child_Last_Name, Child_Date_of_Birth))
+
+# Extract the information that you need from Recruited Children
+Recruited.Children2 <- select(Recruited.Children, ID, x) 
+
+# Extract the information that you need from All Children
+All.Screened.Children2 <- select(All.Screened.Children, KBB_DD_type, Child_age, KBB_DD_status, Child_Gender, epilepsy, x)
+
+# Join the datasets together
+joined.data <- Recruited.Children2 %>%
+  left_join(All.Screened.Children2, by = "x")
+
+```
+
+#### Merge the data into one dataset
+
+
+```{r what is the n for each group}
+# Join this information with the data from our PSQ (regular)
+PSQ2.final <- PSQ2 %>%
+  left_join(joined.data, by = "ID")
+```
+
+
+### Creating Groups for DD Difficulties
+
+We will be creating four groups, but are interested in analyzing the data from three. The four groups will be the following:
+
+- Cognitive: These are children that only have cognitive related difficulties (e.g. Learning, Remembering, Communicating, etc.)
+- Behavioral/Affective: These are children that have only behavioral or emotional difficulties (e.g. Self Care, Anxiety, Controlling Behavior, etc.)
+- Both: Children that have difficulties for cognitive and behavioral/affective.
+- None: Children that have no difficulties with CFM criteria. 
+
+We split the children into groups to make the analysis easier to understand. Children that are in the none category will not be analyzed for they are not probands. There is an exception to this, there are some children who are proband that will be in the None group because they only have epilepsy. The table below will show each child with epilepsy status and how they fit into any of the four DD difficulty groups. 
+
+```{r creating three groups}
+# Create a template that can be used in the future to make modifications
+Template <- c("CF14_Self_care", "CF15_Understood_Inside",  "CF16_Understood_Outside",  
+              "CF17_Learning",  "CF18_Remembering", "CF20_Accepting_Challenge", 
+              "CF21_Controlling_Behavior", "CF23_Anxiety", "CF24_Depression",          
+              "CF22_Making_Friends", "CF19_Concentrating", "CF16_Controlling_Behavior")
+
+
+# Create the requirements for the cognitive group
+group1 <- c("CF15_Understood_Inside", "CF16_Understood_Outside", "CF17_Learning",
+            "CF18_Remembering", "CF19_Concentrating")
+
+# Create the requirements for the behavioral/affective group
+group2 <- c("CF14_Self_care", "CF20_Accepting_Challenge", "CF21_Controlling_Behavior",
+            "CF23_Anxiety", "CF24_Depression", "CF22_Making_Friends", "CF16_Controlling_Behavior")
+
+# Collapse the groups with the or sign
+group1.index <- paste(group1, collapse ="|")
+group2.index <- paste(group2, collapse ="|")
+
+# Introduce the cognitive group to the data
+PSQ2.final <- PSQ2.final %>%
+  mutate(cognitive.group = 
+           case_when(
+             grepl(group1.index, KBB_DD_type) ~ "Yes",
+             TRUE ~ "No"
+           )
+         )
+
+# Introduce the behavioral/affective group to the data
+PSQ2.final <- PSQ2.final %>%
+  mutate(behavioral.group = 
+           case_when(
+             grepl(group2.index, KBB_DD_type) ~ "Yes",
+             TRUE ~ "No"
+           )
+         )
+
+# Create a final variable called groups
+PSQ2.final <- PSQ2.final %>%
+  mutate(Group = 
+           case_when(
+             cognitive.group == "Yes" & behavioral.group == "Yes" ~ "Both",
+             cognitive.group == "Yes" ~ "Cognitive",
+             behavioral.group == "Yes" ~ "Behavioral/Affective",
+             TRUE ~ "None"
+             
+           ))
+
+# Quality Check
+#PSQ2.final %>%
+#  select(KBB_DD_type, KBB_DD_status, epilepsy, Group) %>%
+#  view()
+
+# Change the output of Epilepsy to make the table easier to read
+PSQ2.final <- mutate(PSQ2.final, epilepsy = ifelse(epilepsy == "Yes",
+                                                   "Yes Epilepsy",
+                                                   "No Epilepsy"))
+
+# Change the KBB_DD_status to a factor so you can make Yes appear first
+PSQ2.final$KBB_DD_status <- factor(PSQ2.final$KBB_DD_status,
+                                   levels = c("Yes", "No"),
+                                   labels = c("DD/Proband", "noDD"))
+
+
+# Save a table with epilepsy information + KBB DD status and the group they are in
+epilepsy.table <- table(PSQ2.final$KBB_DD_status, PSQ2.final$Group, PSQ2.final$epilepsy)
+
+
+# Extract information from the epilepsy table and save it as a dataframe
+No.epilepsy.df <- data.frame(cbind(addmargins(epilepsy.table[ , ,"No Epilepsy"])))
+Yes.epilepsy.df <- data.frame(cbind(addmargins(epilepsy.table[ , ,"Yes Epilepsy"])))
+
+# Create a table with the epilepsy dataframes
+cbind(Yes.epilepsy.df,
+      No.epilepsy.df) %>%
+  kbl(caption = "Proband difficulties type by epilepsy status") %>%
+  kable_paper(full_width = F) %>%
+  add_header_above(c(" " = 1, "Has Epilepsy" = 5, "Does not have Epilepsy" = 5)) %>%
+  footnote("The table above shows the breakdown of the children in our sample. The first 4 columns show the number of children with epilepsy that are apart of the DD difficulty types groups. The next 4 columns are for the children with no epilepsy. This is important because some of the probands in our sample are defined as DD but do not have CFM DD status. Thus, the children that are DD/Proband but are in the None group will not be included in the analysis.")
+```
+### Keeping only probands
+
+```{r keeping non overlapping groups}
+# Create a dataset with only probands
+PSQ2.final2 <- PSQ2.final %>%
+  filter(Group %in% c("Cognitive", "Behavioral/Affective", "Both"))
+
+# Obtain the table to see the sample sizes between these two groups
+data.frame(n = cbind(addmargins(table(PSQ2.final2$Group)))) %>%
+  kbl(caption = "Final sample size of our groups for analysis (Probands)") %>%
+  kable_paper(full_width = F) %>%
+  footnote("Sum indicates the addition of the sample sizes for the three groups. ")
+
+```
+
+
+### Obtaining the sum score for the Stigma Questionnaire
+
+The responses from the Stigma Questionnaire (FAMSI) will be added into one sum score for each proband. As mentioned, the questions are asking caregivers how much perceived stigma they experience. Low experience to stigma result in a lower score and higher experience to stigma results in a higher score. Thus, the higher the sum score, the more stigma is experienced. 
+
+```{r scoring the stigma questionnaire}
+# Calculate the raw sum of the stigma questionnaire
+PSQ2.final2$PSQ.Raw.Sum <- PSQ2.final2 %>%
+  select(starts_with("Q")) %>%
+  rowSums()
+
+# Plot it between the groups
+Cognitive.hist <- PSQ2.final2 %>%
+  filter(Group == "Cognitive") %>%
+  ggplot(aes(x= PSQ.Raw.Sum )) +
+  geom_histogram(bins = 8,
+                 fill = "white",
+                 color = "black") +
+  labs(title = "Cognitive PSQ Histogram") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,8)) + 
+  theme_classic()
+
+Behavioral.hist <- PSQ2.final2 %>%
+  filter(Group == "Behavioral/Affective") %>%
+  ggplot(aes(x= PSQ.Raw.Sum )) +
+  geom_histogram(bins = 8,
+                 fill = "white",
+                 color = "black") +
+  labs(title = "Behavioral/Affective PSQ Histogram") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,5)) + 
+  theme_classic()
+
+Both.hist <- PSQ2.final2 %>%
+  filter(Group == "Both") %>%
+  ggplot(aes(x= PSQ.Raw.Sum )) +
+  geom_histogram(bins = 8,
+                 fill = "white",
+                 color = "black") +
+  labs(title = "Cognitive and Behavioral/Affective PSQ Histogram") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,7)) + 
+  theme_classic()
+
+
+# Plot them
+ggarrange(Cognitive.hist, Behavioral.hist,Both.hist)
+
+
+```
+
+
+### Run the Analysis
+
+Three Mann-Whitney U Tests were run on the Perceived Stigma Sum Scores by Groups (Cognitive vs Behavioral/Affective vs Both).
+
+'Wilcoxon W is simply the lowest sum of ranks but in order to calculate the p-value (Asymp. Sig), R uses an approximation to the standard normal distribution and also makes a continuity correction. The approximation is less reliable for small sample sizes'
+
+This test is a pair-wise type test, meaning that each group will be compared to each other one at a time. If the perceived stigma sum scores are different between groups, then the returned p-value will be significant (p<.05).
+
+```{r run the analysis, warning = FALSE}
+# Create three pairs to do group comparisons
+PSQ2.final2.Cognitive.Behavioral <-PSQ2.final2 %>%
+  filter(Group != "Both")
+
+PSQ2.final2.Both.Behavioral <-PSQ2.final2 %>%
+  filter(Group != "Cognitive")
+
+PSQ2.final2.Both.Cognitive <-PSQ2.final2 %>%
+  filter(Group != "Behavioral/Affective")
+         
+    
+# Run three Wilcox Tests
+wilcox.test(PSQ2.final2.Cognitive.Behavioral$PSQ.Raw.Sum~PSQ2.final2.Cognitive.Behavioral$Group)
+wilcox.test(PSQ2.final2.Both.Behavioral$PSQ.Raw.Sum~PSQ2.final2.Both.Behavioral$Group)
+wilcox.test(PSQ2.final2.Both.Cognitive$PSQ.Raw.Sum~PSQ2.final2.Both.Cognitive$Group)
+```
+### Writing the results from the Mann-Whitney U Tests
+
+There are significant group differences in perceived stigma between cognitive and behavioral/affective children (W = 49, p < .01). However, there were no significant differences in perceived stigma between behavioral/affective and both groups (W= 48, p = .05) and between cognition and behavioral/affective (W= 165, p = .76).
+
+

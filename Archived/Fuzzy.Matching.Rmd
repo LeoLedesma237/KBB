@@ -1,0 +1,164 @@
+---
+title: "Fuzzy Matching HOH_IDs"
+author: "Leandro Ledesma"
+date: "2024-02-25"
+output: html_document
+---
+
+### Universal block code settings
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+### Load in the data manipulation packages first
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(kableExtra)
+library(openxlsx) # To save excel files with multiple tabs
+library(fuzzyjoin)
+```
+
+### Load in the data 
+
+We will be loading in data that most likely has typos in the name. 
+
+
+```{r load in the data with typos}
+# Set the working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB_new_2/1_screener/final_data")
+
+# Load in the data
+potential.HOH_ID.errors <- read_excel("Potential_Household_errors.xlsx", sheet = "error_household")
+correct.HOH_IDs <- read_excel("Potential_Household_errors.xlsx", sheet = "correct_household")
+
+```
+
+### Fuzzy matching (Part 1)
+
+We will now take the typo ID's and try to match them, mathematically, to the closest ID that was correctly typed. I have set the code to only show the matches that have a distance value of less than 4. These have the highest chance of being correct typo to real HOH_ID matches. Additionally, use the variables 'Date of Evaluation' and 'Village' to increase your confidence that these HOH_IDs are the same. Again, just because the code matched them, doesn't mean they should be matched, but there is a highly probability that these two HOH_IDs are the same. 
+
+```{r fuzzy matching}
+# Data cleaning
+potential.HOH_ID.errors <- potential.HOH_ID.errors %>%
+  select(HOH_ID, Date_of_Evaluation, Name_of_the_Village, Evaluator_ID)
+
+correct.HOH_IDs <- correct.HOH_IDs %>%
+  select(HOH_ID, Date_of_Evaluation, Name_of_the_Village,Evaluator_ID)
+
+# Run the fuzzy matching
+fuzzy.matching <- stringdist_join(potential.HOH_ID.errors, correct.HOH_IDs, 
+                by= "HOH_ID", #match based on ID
+                mode='left', #use left join
+                method = "osa", #use jw distance metric
+                max_dist=99, 
+                distance_col='dist') %>%
+  group_by(HOH_ID.x) %>%
+  slice_min(order_by=dist, n=1) %>%
+  data.frame() %>%
+  rename(`Typo HOH_ID` = HOH_ID.x, 
+         `Correct HOH_ID` = HOH_ID.y) %>%
+  arrange(dist) %>%
+  filter(dist < 4) %>%
+  unique()
+
+paste("From the Fuzzy Matching code, there are potentially",nrow(fuzzy.matching),"typo IDs that were matched to real HOH_IDs")
+
+# Save only the unique matches
+fuzzy.matching <- unique(fuzzy.matching)
+
+# Print out the options
+fuzzy.matching %>%
+  arrange(desc(Date_of_Evaluation.x)) %>%
+  kbl() %>%
+  kable_paper(bootstrap_options = "striped", full_width = F)
+
+
+# Remove the typo HOH_IDs that were matched to a correct HOH_ID from the 'potential.HOH_ID.errors' data frame
+potential.HOH_ID.errors2 <- potential.HOH_ID.errors %>%
+  filter(!(HOH_ID %in% fuzzy.matching$`Typo HOH_ID`))
+
+```
+
+
+### Fuzzy matching (Part 2)
+
+There are, however, other cases where there are only two instances where an HOH_ID is typed, and neither version matches each other. For these cases, we need to one by one match a typo HOH_ID to the rest of the typo HOH_IDs and see if we can potentially find some matches here. 
+
+
+```{r fuzzy matching part 2}
+paste("There are",nrow(potential.HOH_ID.errors2),"typo HOH_IDs that still need to be matched")
+
+# Create a function to take on HOH_ID by one and then match to the rest in the data frame
+potential.matches.list <- list()
+
+for(ii in 1:nrow(potential.HOH_ID.errors2)) {
+
+typo.ID.length <- nrow(potential.HOH_ID.errors2)
+current.row <- ii
+not.current.row <- setdiff(1:typo.ID.length, current.row)
+
+current.row.df <- potential.HOH_ID.errors2[current.row,]
+not.current.row.df <- potential.HOH_ID.errors2[not.current.row,]
+
+
+potential.matches.list[[ii]] <- stringdist_join(current.row.df, not.current.row.df, 
+                by= "HOH_ID", #match based on ID
+                mode='left', #use left join
+                method = "osa", #use jw distance metric
+                max_dist=99, 
+                distance_col='dist') %>%
+  rename(`Typo HOH_ID 1` = HOH_ID.x, 
+         `Type HOH_ID 2` = HOH_ID.y) %>%
+  arrange(dist) %>%
+  filter(dist < 4) %>%
+  unique()
+
+}
+
+# Print the new potential matches 
+fuzzy.matching2 <- potential.matches.list %>%
+  do.call(rbind,.)
+  
+fuzzy.matching2 %>%
+    arrange(desc(Date_of_Evaluation.x)) %>%
+    kbl() %>%
+    kable_paper(bootstrap_options = "striped", full_width = F)
+
+# Remove the typo HOH_IDs that were matched to another typo HOH_ID from the 'potential.HOH_ID.errors' data frame
+potential.HOH_ID.errors3 <- potential.HOH_ID.errors2 %>%
+  filter(!(HOH_ID %in% fuzzy.matching2$`Typo HOH_ID 1`))
+
+```
+
+
+### ID's that could not be matched at all
+
+The ID's down below could not be matched to any existing HOH_ID's nor to each other. This could be the case for the following reasons:
+
+1) There was a mistake with designating HOH information and respondent information (such as names or birthdates)
+
+2) The typos are so severe that they cannot be matched (information was typed in very incorrectly)
+
+3) Only one HOH_ID was asked for a child- which does not make sense
+
+4) The matching ID was either lost, not saved, or not updated to KoboToolBox website yet. 
+
+
+```{r IDs that could not be matched at all}
+potential.HOH_ID.errors3 %>%
+  unique() %>%
+  arrange(desc(Date_of_Evaluation)) %>%
+  kbl() %>%
+    kable_paper(bootstrap_options = "striped", full_width = F)
+
+```
+
+
+

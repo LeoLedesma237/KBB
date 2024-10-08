@@ -1,0 +1,314 @@
+---
+title: "KBB Data Report"
+author: "Leandro Ledesma"
+date: "2024-02-27"
+output: html_document
+---
+
+This document will be reporting current data collected from the CFM questionnaires.
+
+### Universal block code settings
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+
+```
+
+### Load in the data manipulation packages first
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+library(openxlsx) # To save excel files with multiple tabs
+```
+
+### Part 1: Load in the data and create excluded children data frames
+
+We will load some of the data in the directory that saves data related to all screened children, children exclusion, children that were matched and those that did not have a match. Each dataset was given a child ID. This ID should represent a child and be unique to them. We will be using these IDs for quality control measures. 
+
+From the six datasets below, we have combined a few to make a total of three. They are as follows:
+
+- All Children
+- Excluded Children (excluded DD and excluded no DD)
+- Excluded Children no match (No match or had a match originally but a sibling was excluded)
+
+All of these datasets were checked below and shown to be independent of each other. Meaning, none of the ID's in 'Excluded Children' are present in 'Excluded children no match.' Additionally and kinda obviously, all the ID's in these two datasets are present in 'All Children'.
+
+```{r load in the data, warning = FALSE}
+# Set the working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB_new_2/1_screener/final_data")
+
+# Load in all useful data
+All.Children <- read_excel("All Children.xlsx")
+Excluded.Children.DD <- read_excel("All CFM Excluded Children and Why.xlsx", sheet = "excluded_DD")
+Excluded.Children.noDD <- read_excel("All CFM Excluded Children and Why.xlsx", sheet = "excluded_no_DD")
+Excluded.Children.NoMatch.org <- read_excel("All CFM Excluded Children and Why.xlsx", sheet = "Unable_to_match")
+One.House.Children <- read_excel("Potential_Household_errors.xlsx")
+
+# Rbind the excluded children into one (not counting those that were removed because of not having a match)
+Excluded.Children <- rbind(Excluded.Children.DD,
+                           Excluded.Children.noDD)
+
+# Rbind the no match and the one household children
+Excluded.Children.NoMatch <- Excluded.Children.NoMatch.org %>%
+  rbind(One.House.Children)
+
+# Give all of these final datasets a child.id for quality control
+All.Children <- All.Children %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+Excluded.Children <- Excluded.Children %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+Excluded.Children.NoMatch <- Excluded.Children.NoMatch %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+# rbind the sub datasets to check for duplicates
+Excluded.Children %>%
+  rbind(Excluded.Children.NoMatch) %>%
+  group_by(child.id) %>%
+  count() %>%
+  filter(n > 1)
+
+
+```
+
+### Part 2: Load in the data of matched children
+
+This next section is data from a different directory. These are children that were either matched to biological siblings or close relatives. These numbers will make the distinction. The data from these excel files have a different structure than those above. So we will need to index the children below from the `All.Children` data frame to obtain all the variables we will need for descriptive statistics of these groups.  
+
+```{r load in the data part 2, warning = FALSE}
+# Set the working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB_new_2/matched_siblings")
+
+# Load in more data
+Matched.Siblings <- read_excel("New ID Tracker.xlsx")
+Matched.No.Siblings <- read_excel("Subjects with different parents or other problems.xlsx")
+
+# Create a temporary ID for the children
+Matched.Siblings <- Matched.Siblings %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB))
+Matched.No.Siblings <- Matched.No.Siblings %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB))
+All.Children <- All.Children %>%
+  mutate(child.id = paste(Child_First_Name, Child_Last_Name, Child_DOB = Child_Date_of_Birth))
+
+# Indexing the data
+All.Matched.Siblings <- All.Children %>%
+  filter(child.id %in% Matched.Siblings$child.id)
+
+All.Matched.No.Siblings <- All.Children %>%
+  filter(child.id %in% Matched.No.Siblings$child.id)  
+
+```
+
+
+
+### Descriptive statistics All Children
+
+
+```{r descriptive statistics all children}
+## Obtain the frequencies of KBB DD, Epilepsy and Sex in All Childre. 
+AC.KBB.Freq <- data.frame(KBB.DD = rbind(table(All.Children$KBB_DD_status)))
+data.frame(Epilepsy = rbind(table(All.Children$epilepsy)))
+data.frame(Sex = rbind(table(All.Children$Child_Gender)))
+
+```
+
+
+
+### Descriptive statistics All Excluded Children 
+
+
+```{r descriptive statistics excluded children}
+## Step1: All Excluded children: rename the values for our variables of interest
+Excluded.Children.value.renaming <-
+Excluded.Children %>%
+  select(KBB_DD_status, epilepsy, Child_Gender) %>%
+  drop_na() %>%
+  count(KBB_DD_status, epilepsy, Child_Gender) %>%
+  mutate(KBB_DD_status = ifelse(KBB_DD_status == "Yes","DD","noDD"),
+         epilepsy = ifelse(epilepsy == "Yes","Epilepsy","noEpilepsy")) 
+
+## Step2: All Excluded children: Make the data wider so all information is present in one row
+Excluded.Children.wider <- 
+Excluded.Children.value.renaming %>%
+  pivot_wider(names_from = KBB_DD_status, values_from = n) %>%
+  pivot_wider(names_from = epilepsy, values_from = c(noDD,DD)) %>%
+  pivot_wider(names_from = Child_Gender, values_from = c(noDD_noEpilepsy,
+                                                         noDD_Epilepsy,
+                                                         DD_noEpilepsy,
+                                                         DD_Epilepsy))
+
+# Step3: All Excluded children: replace any NA's into zeroes
+Excluded.Children.wider[is.na(Excluded.Children.wider)] <- 0
+
+# Step 4: Rename the variables to print out descriptive statistics
+Excluded.Children.row <- 
+Excluded.Children.wider %>%
+  transmute(noDD = noDD_noEpilepsy_female + noDD_noEpilepsy_male,
+            DD = DD_noEpilepsy_female + DD_noEpilepsy_male + DD_Epilepsy_female + DD_Epilepsy_male,
+            `DD(%)` = paste(round(DD/(noDD + DD),2)*100,"%",sep=""),
+            epilepsy = DD_Epilepsy_female + DD_Epilepsy_male,
+            `epilepsy(%)` = paste(round(epilepsy/(noDD + DD),2)*100,"%",sep=""),
+            male = noDD_noEpilepsy_male + DD_noEpilepsy_male + DD_Epilepsy_male,
+            `male(%)` = paste(round(male/(noDD + DD),2)*100,"%",sep=""),
+            N = noDD + DD)
+
+```
+
+### Descriptive statistics Unable to Match
+
+
+```{r descriptive statistics unable to match children}
+## Step1: All unable to match children: rename the values for our variables of interest
+Excluded.Children.NoMatch.value.renaming <-
+Excluded.Children.NoMatch %>%
+  select(KBB_DD_status, epilepsy, Child_Gender) %>%
+  drop_na() %>%
+  count(KBB_DD_status, epilepsy, Child_Gender) %>%
+  mutate(KBB_DD_status = ifelse(KBB_DD_status == "Yes","DD","noDD"),
+         epilepsy = ifelse(epilepsy == "Yes","Epilepsy","noEpilepsy")) 
+
+## Step2: All unable to match children: Make the data wider so all information is present in one row
+Excluded.Children.NoMatch.wider <- 
+Excluded.Children.NoMatch.value.renaming %>%
+  pivot_wider(names_from = KBB_DD_status, values_from = n) %>%
+  pivot_wider(names_from = epilepsy, values_from = c(noDD,DD)) %>%
+  pivot_wider(names_from = Child_Gender, values_from = c(noDD_noEpilepsy,
+                                                         noDD_Epilepsy,
+                                                         DD_noEpilepsy,
+                                                         DD_Epilepsy))
+
+# Step3: All unable to match children: replace any NA's into zeroes
+Excluded.Children.NoMatch.wider[is.na(Excluded.Children.NoMatch.wider)] <- 0
+
+# Step 4: Rename the variables to print out descriptive statistics
+Excluded.Children.NoMatch.row <- 
+Excluded.Children.NoMatch.wider %>%
+  transmute(noDD = noDD_noEpilepsy_female + noDD_noEpilepsy_male,
+            DD = DD_noEpilepsy_female + DD_noEpilepsy_male + DD_Epilepsy_female + DD_Epilepsy_male,
+            `DD(%)` = paste(round(DD/(noDD + DD),2)*100,"%",sep=""),
+            epilepsy = DD_Epilepsy_female + DD_Epilepsy_male,
+            `epilepsy(%)` = paste(round(epilepsy/(noDD + DD),2)*100,"%",sep=""),
+            male = noDD_noEpilepsy_male + DD_noEpilepsy_male + DD_Epilepsy_male,
+            `male(%)` = paste(round(male/(noDD + DD),2)*100,"%",sep=""),
+            N = noDD + DD)
+
+```
+
+
+### All matched no not direct siblings 
+
+```{r descriptive statistics of all matched not direct siblings}
+## Step1: All unable to match children: rename the values for our variables of interest
+All.Matched.No.Siblings.value.renaming <-
+All.Matched.No.Siblings %>%
+  select(KBB_DD_status, epilepsy, Child_Gender) %>%
+  drop_na() %>%
+  count(KBB_DD_status, epilepsy, Child_Gender) %>%
+  mutate(KBB_DD_status = ifelse(KBB_DD_status == "Yes","DD","noDD"),
+         epilepsy = ifelse(epilepsy == "Yes","Epilepsy","noEpilepsy")) 
+
+## Step2: All unable to match children: Make the data wider so all information is present in one row
+All.Matched.No.Siblings.wider <- 
+All.Matched.No.Siblings.value.renaming %>%
+  pivot_wider(names_from = KBB_DD_status, values_from = n) %>%
+  pivot_wider(names_from = epilepsy, values_from = c(noDD,DD)) %>%
+  pivot_wider(names_from = Child_Gender, values_from = c(noDD_noEpilepsy,
+                                                         noDD_Epilepsy,
+                                                         DD_noEpilepsy,
+                                                         DD_Epilepsy))
+
+# Step3: All unable to match children: replace any NA's into zeroes
+All.Matched.No.Siblings.wider[is.na(All.Matched.No.Siblings.wider)] <- 0
+
+# Step 4: Rename the variables to print out descriptive statistics
+All.Matched.No.Siblings.row <- 
+All.Matched.No.Siblings.wider %>%
+  transmute(noDD = noDD_noEpilepsy_female + noDD_noEpilepsy_male,
+            DD = DD_noEpilepsy_female + DD_noEpilepsy_male + DD_Epilepsy_female + DD_Epilepsy_male,
+            `DD(%)` = paste(round(DD/(noDD + DD),2)*100,"%",sep=""),
+            epilepsy = DD_Epilepsy_female + DD_Epilepsy_male,
+            `epilepsy(%)` = paste(round(epilepsy/(noDD + DD),2)*100,"%",sep=""),
+            male = noDD_noEpilepsy_male + DD_noEpilepsy_male + DD_Epilepsy_male,
+            `male(%)` = paste(round(male/(noDD + DD),2)*100,"%",sep=""),
+            N = noDD + DD)
+```
+
+
+### All matched direct siblings 
+
+```{r descriptive statistics of all matched direct siblings}
+## Step1: All unable to match children: rename the values for our variables of interest
+All.Matched.Siblings.value.renaming <-
+All.Matched.Siblings %>%
+  select(KBB_DD_status, epilepsy, Child_Gender) %>%
+  drop_na() %>%
+  count(KBB_DD_status, epilepsy, Child_Gender) %>%
+  mutate(KBB_DD_status = ifelse(KBB_DD_status == "Yes","DD","noDD"),
+         epilepsy = ifelse(epilepsy == "Yes","Epilepsy","noEpilepsy")) 
+
+## Step2: All unable to match children: Make the data wider so all information is present in one row
+All.Matched.Siblings.wider <- 
+All.Matched.Siblings.value.renaming %>%
+  pivot_wider(names_from = KBB_DD_status, values_from = n) %>%
+  pivot_wider(names_from = epilepsy, values_from = c(noDD,DD)) %>%
+  pivot_wider(names_from = Child_Gender, values_from = c(noDD_noEpilepsy,
+                                                         noDD_Epilepsy,
+                                                         DD_noEpilepsy,
+                                                         DD_Epilepsy))
+
+# Step3: All unable to match children: replace any NA's into zeroes
+All.Matched.Siblings.wider[is.na(All.Matched.Siblings.wider)] <- 0
+
+# Step 4: Rename the variables to print out descriptive statistics
+All.Matched.Siblings.row <- 
+All.Matched.Siblings.wider %>%
+  transmute(noDD = noDD_noEpilepsy_female + noDD_noEpilepsy_male,
+            DD = DD_noEpilepsy_female + DD_noEpilepsy_male + DD_Epilepsy_female + DD_Epilepsy_male,
+            `DD(%)` = paste(round(DD/(noDD + DD),2)*100,"%",sep=""),
+            epilepsy = DD_Epilepsy_female + DD_Epilepsy_male,
+            `epilepsy(%)` = paste(round(epilepsy/(noDD + DD),2)*100,"%",sep=""),
+            male = noDD_noEpilepsy_male + DD_noEpilepsy_male + DD_Epilepsy_male,
+            `male(%)` = paste(round(male/(noDD + DD),2)*100,"%",sep=""),
+            N = noDD + DD)
+```
+
+
+### Merging all the datasets together into one table
+
+```{r merging all into one table}
+# merge all the data
+all.data <- All.Children.row %>%
+  rbind(Excluded.Children.row) %>%
+  rbind(Excluded.Children.NoMatch.row) %>%
+  rbind(All.Matched.No.Siblings.row) %>%
+  rbind(All.Matched.Siblings.row)
+
+# Add a variable describing each row
+all.data$`_` <- c("Total Children Screened",
+                       "All Excluded Children",
+                       "Unable to Match Children",
+                       "Non-direct slibling matches",
+                       "Direct sibling matches")
+
+# Change the order of the variable
+all.data <-all.data %>%
+  select(`_`, everything())
+
+# Create a table
+all.data %>%
+  kbl() %>%
+  kable_paper(bootstrap_options = "striped", full_width = F)
+  
+
+
+
+```
+
+
