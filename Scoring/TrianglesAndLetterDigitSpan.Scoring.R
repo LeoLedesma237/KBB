@@ -1,7 +1,5 @@
 # This is the script for Triangles and Letter & Digit Span
-# We are starting from the Root Directory /KBB
-Root.Folder <- "C:/Users/lledesma.TIMES/Documents/KBB"
-setwd(Root.Folder)
+
 
 # Load in Packages
 library(tidyverse)
@@ -10,10 +8,11 @@ library(openxlsx)
 library(stringr) # str_count()
 
 # Read in the file
-Triangles_LettrDig <- read_excel("2_behavioral_assessments/Children/Raw/Triangles_LettrDig_Raw.xlsx")
+Triangles_LettrDig <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/Triangles_LettrDig_Raw.xlsx"))
+
 
 # Check the IDs for errors
-source("2_behavioral_assessments/id_error_function.R")
+source("Scoring/IDError_FUNCTION.R")
 TR_Notes <-check_id_errors("Triangles and LettrDig",
                            Triangles_LettrDig$Child_ID)
 
@@ -102,13 +101,13 @@ LetterDig <- LetterDig %>%
          LetDig_Performance = NF_Performance + NB_Performance + LF_Performance + NB_Performance)
 
 # Create a save pathway
-save.pathway_TR <- paste(Root.Folder,"/",
-                         "2_behavioral_assessments/Children/Processed", "/",
-                          "Triangles.xlsx", sep="")
+save.pathway_TR <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
+                         "Triangles.xlsx", sep="")
 
-save.pathway_LD <- paste(Root.Folder,"/",
-                         "2_behavioral_assessments/Children/Processed", "/",
+save.pathway_LD <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
                          "LettrDig.xlsx", sep="")
+
+
 
 # Save the scored data
 write.xlsx(x= Triangles, file = save.pathway_TR)
@@ -116,8 +115,7 @@ write.xlsx(x= LetterDig, file = save.pathway_LD)
 
 
 # Create a save pathway for Notes
-save.pathway.notes <- paste(Root.Folder,"/",
-                            "2_behavioral_assessments/Children/Processed_Notes", "/",
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
                             "Triangles_LettrDig_Notes.csv", sep="")
 
 # Save the Notes as a CSV
@@ -129,10 +127,8 @@ cat("Saving processed Triangles\n")
 cat("Saving processed Letter and Digit Span\n")
 
 # Remove all global environment objects to declutter
-rm(list=ls())
+rm(list = ls()[!(ls() %in% c("DataLocation"))])
 
-# Set the working directory to the scoring scripts
-setwd("~/GitHub/LeoWebsite/KBB.Scripts/Scoring")
 
 # Set a pause time for 1 second
 Sys.sleep(1)

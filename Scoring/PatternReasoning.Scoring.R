@@ -1,19 +1,18 @@
 # This is the script for scoring Pattern Reasoning
 # We are starting from the Root Directory /KBB
-Root.Folder <- "C:/Users/lledesma.TIMES/Documents/KBB"
-setwd(Root.Folder)
 
 # Load in Packages
 library(tidyverse)
 library(readxl)
 library(openxlsx)
-library(stringr) # str_count()
+library(stringr) 
 
 # Read in the file
-PatternReasoning <- read_excel("2_behavioral_assessments/Children/Raw/PatternReas_Raw.xlsx")
+PatternReasoning <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/PatternReas_Raw.xlsx"))
+
 
 # Check the IDs for errors
-source("2_behavioral_assessments/id_error_function.R")
+source("Scoring/IDError_FUNCTION.R")
 PR_Notes <-check_id_errors("Pattern Reasoning",
                            PatternReasoning$Child_ID)
 
@@ -53,16 +52,14 @@ PatternReasoning2$Performance <- rowSums(Items.Cleaned.num)
 names(PatternReasoning2) <- c(names(PatternReasoning2)[1:3], paste("PR_",names(PatternReasoning2)[4:45], sep=""))
 
 # Create a save pathway
-save.pathway <- paste(Root.Folder,"/",
-                    "2_behavioral_assessments/Children/Processed", "/",
+save.pathway <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
                      "PatternReas_Processed.xlsx", sep="")
 
 # Save the scored data
 write.xlsx(x= PatternReasoning2, file = save.pathway)
 
 # Create a save pathway for Notes
-save.pathway.notes <- paste(Root.Folder,"/",
-                            "2_behavioral_assessments/Children/Processed_Notes", "/",
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
                             "PatternReas_Notes.csv", sep="")
 
 # Save the Notes as a CSV
@@ -73,10 +70,8 @@ write_csv(x = PR_Notes, save.pathway.notes)
 cat("Saving processed Pattern Reasoning\n")
 
 # Remove all global environment objects to declutter
-rm(list=ls())
+rm(list = ls()[!(ls() %in% c("DataLocation"))])
 
-# Set the working directory to the scoring scripts
-setwd("~/GitHub/LeoWebsite/KBB.Scripts/Scoring")
 
 # Set a pause time for 1 second
 Sys.sleep(1)

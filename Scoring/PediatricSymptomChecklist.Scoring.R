@@ -1,7 +1,6 @@
 # This is the script for scoring Pediactric Symptom Checklist
-# We are starting from the Root Directory /KBB
-Root.Folder <- "C:/Users/lledesma.TIMES/Documents/KBB"
-setwd(Root.Folder)
+
+
 
 # Load in Packages
 library(tidyverse)
@@ -10,13 +9,14 @@ library(openxlsx)
 library(stringr) # str_count()
 
 # Read in the file
-PSC <- read_excel("2_behavioral_assessments/Adults/Raw/PSC_Raw.xlsx")
+PSC <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Adults/PSC_Raw.xlsx"))
+
 
 # Rename Child_Study_ID var
 PSC <- rename(PSC, Child_ID = Child_Study_ID)
 
 # Check the IDs for errors
-source("2_behavioral_assessments/id_error_function.R")
+source("Scoring/IDError_FUNCTION.R")
 PSC_Notes <-check_id_errors("Pediatric Symptom Checklist",
                             PSC$Child_ID)
 
@@ -51,18 +51,18 @@ PSC2$Performance = rowSums(Items)
 names(PSC2) <- c(names(PSC2)[1:3], paste("PSC_",names(PSC2)[4:47], sep=""))
 
 # Create a save pathway
-save.pathway_PSC <- paste(Root.Folder,"/",
-                         "2_behavioral_assessments/Adults/Processed", "/",
-                         "PSC.xlsx", sep="")
+save.pathway_PSC <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
+                          "PSC.xlsx", sep="")
+
 
 # Save the scored data
 write.xlsx(x= PSC2, file = save.pathway_PSC)
   
 
 # Create a save pathway for Notes
-save.pathway.notes <- paste(Root.Folder,"/",
-                            "2_behavioral_assessments/Adults/Processed_Notes", "/",
-                            "PSC.csv", sep="")
+save.pathway.notes <-  paste(DataLocation,"REPORTS/Individual/",
+                             "PSC.csv", sep="")
+
 
 # Save the Notes as a CSV
 write_csv(x = PSC_Notes, save.pathway.notes)
@@ -71,10 +71,7 @@ write_csv(x = PSC_Notes, save.pathway.notes)
 cat("Saving processed Pediatric Symptom Checklist\n")
 
 # Remove all global environment objects to declutter
-rm(list=ls())
-
-# Set the working directory to the scoring scripts
-setwd("~/GitHub/LeoWebsite/KBB.Scripts/Scoring")
+rm(list = ls()[!(ls() %in% c("DataLocation"))])
 
 # Set a pause time for 1 second
 Sys.sleep(1)

@@ -1,3 +1,6 @@
+# This is the main script for importing (most of) and scoring behavioral data saved in KoboToolBox
+
+
 # Load in package
 library(tidyverse)
 library(robotoolbox)
@@ -5,9 +8,22 @@ library(openxlsx)
 library(readxl)
 
 
-# Set working directory to Root Folder
-Root.Folder <- "C:/Users/lledesma.TIMES/Documents/KBB"
-setwd(Root.Folder)
+# Set the location for your working directory (Where your scripts are saved)
+WorkingDirectory <- "C:/Users/lledesma.TIMES/Documents/GitHub/KBB/"
+
+# Set the location for where your data is saved
+DataLocation <- "C:/Users/lledesma.TIMES/Documents/KBB/Data/"
+
+
+
+#########################                          ############################
+######################                                 ########################
+###################### REST OF THE SCRIPT IS AUTOMATIC ########################
+######################                                 ########################
+##########################                        #############################
+
+# Set working directory
+setwd(WorkingDirectory)
 
 # API Token
 token <- "947975196832610fca8a1673d54f0530c7cb8275"
@@ -60,9 +76,9 @@ df.uid.t$label <- c(rep("Children", 6), rep("Adults", 6), rep("Screener",2))
 df.uid.t <- df.uid.t %>%
   mutate(raw.pathway = case_when(
   
-  label == "Children" ~"2_behavioral_assessments/Children/Raw",
-  label == "Adults" ~ "2_behavioral_assessments/Adults/Raw",
-  label == "Screener" ~ "1_screener/Raw"
+  label == "Children" ~"RAW_DATA/Behavioral/Children/",
+  label == "Adults" ~ "RAW_DATA/Behavioral/Adults/",
+  label == "Screener" ~ "RAW_DATA/Screener/"
   
 ))
 
@@ -88,8 +104,8 @@ for(ii in 1:nrow(df.uid.t)) {
 for(ii in 1:length(all.data.list)) {
 
   # Create The Save Pathway
-  save.pathway = paste(Root.Folder,"/",
-                       df.uid.t$raw.pathway[ii], "/",
+  save.pathway = paste(DataLocation,
+                       df.uid.t$raw.pathway[ii],
                        names(all.data.list),"_Raw.xlsx", sep="")[ii]
   
   # Select the data to save
@@ -107,16 +123,17 @@ for(ii in 1:length(all.data.list)) {
 # Wait 2 seconds
 Sys.sleep(2)
 
-# Change the directory to the location of the scripts
-setwd("~/GitHub/LeoWebsite/KBB.Scripts/Scoring")
 
 # Score the data
-source("PatternReasoning.Scoring.R")
-source("TrianglesAndLetterDigitSpan.Scoring.R")
-source("ReceptiveVocabulary.Scoring.R")
-source("PediatricSymptomChecklist.Scoring.R")
-source("PhysicalData.Scoring.R")
+source("Scoring/PatternReasoning.Scoring.R")
+source("Scoring/TrianglesAndLetterDigitSpan.Scoring.R")
+source("Scoring/ReceptiveVocabulary.Scoring.R")
+source("Scoring/PediatricSymptomChecklist.Scoring.R")
+source("Scoring/PhysicalData.Scoring.R")
+source("Scoring/BRIEF2SelfReport.Scoring.R") # Partly scored 
+
+
 
 # Emerged Problems
-source("ErrorManagement.Scoring.R")
-print(All.notes)
+source("Scoring/ErrorManagement.Scoring.R")
+print(combined.data2)

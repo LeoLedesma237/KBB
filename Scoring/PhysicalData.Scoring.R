@@ -1,14 +1,17 @@
 # This is the script for scoring Physical Data
-# We are starting from the Root Directory /KBB
-Root.Folder <- "C:/Users/lledesma.TIMES/Documents/KBB"
-setwd(Root.Folder)
+
+
+# Load in Packages
+library(tidyverse)
+library(readxl)
+library(openxlsx)
 
 # Load in the data
-Physical.data <- read_excel("2_behavioral_assessments/Children/Raw/PhysicalData_Raw.xlsx")
+Physical.data <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/PhysicalData_Raw.xlsx"))
 
 
 # Check the IDs for errors
-source("2_behavioral_assessments/id_error_function.R")
+source("Scoring/IDError_FUNCTION.R")
 PD_Notes <-check_id_errors("Physical Data",
                            Physical.data$Child_ID)
 
@@ -121,8 +124,7 @@ for(ii in 1:nrow(Hearing.Items)) {
 PhysicalData2 <- cbind(Front, Eyes.Items, Hearing.Items,do.call(rbind,Hearing.Scoring.List))
 
 # Create a save pathway
-save.pathway_PD <- paste(Root.Folder,"/",
-                         "2_behavioral_assessments/Children/Processed", "/",
+save.pathway_PD <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
                          "PhysicalData.xlsx", sep="")
 
 # Save the scored data
@@ -130,8 +132,7 @@ write.xlsx(x= PhysicalData2, file = save.pathway_PD)
 
 
 # Create a save pathway for Notes
-save.pathway.notes <- paste(Root.Folder,"/",
-                            "2_behavioral_assessments/Children/Processed_Notes", "/",
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
                             "PhysicalData.csv", sep="")
 
 # Save the Notes as a CSV
@@ -142,10 +143,8 @@ write_csv(x = PD_Notes, save.pathway.notes)
 cat("Saving processed Physical Data\n")
 
 # Remove all global environment objects to declutter
-rm(list=ls())
+rm(list = ls()[!(ls() %in% c("DataLocation"))])
 
-# Set the working directory to the scoring scripts
-setwd("~/GitHub/LeoWebsite/KBB.Scripts/Scoring")
 
 # Set a pause time for 1 second
 Sys.sleep(1)
