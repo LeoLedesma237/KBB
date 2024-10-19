@@ -131,6 +131,7 @@ source("Scoring/ReceptiveVocabulary.Scoring.R")
 source("Scoring/PediatricSymptomChecklist.Scoring.R")
 source("Scoring/PhysicalData.Scoring.R")
 source("Scoring/BRIEF2SelfReport.Scoring.R")
+source("Scoring/BRIEF2ParentForm.Scoring.R")
 source("Scoring/Demographics_Scoring.R")
 
 

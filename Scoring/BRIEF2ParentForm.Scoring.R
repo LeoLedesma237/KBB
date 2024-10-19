@@ -10,7 +10,7 @@ BRIEF2PF <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Adults/BRIEF2_Pa
 
 # Check the IDs for errors
 source("Scoring/IDError_FUNCTION.R")
-BRPF_Notes <-check_id_errors("BRIEF2 Self Report",
+BRPF_Notes <-check_id_errors("BRIEF2 Parent Form",
                              BRIEF2PF$Child_ID)
 
 
