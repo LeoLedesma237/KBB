@@ -1,6 +1,5 @@
 # This is the script for Triangles and Letter & Digit Span
 
-
 # Load in Packages
 library(tidyverse)
 library(readxl)
@@ -10,9 +9,23 @@ library(stringr) # str_count()
 # Read in the file
 Triangles_LettrDig <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/Triangles_LettrDig_Raw.xlsx"))
 
+# Create a save pathway for cleaned and scored Triangles data
+save.pathway_TR <- paste(DataLocation,"FINAL_DS/Behavioral/Children/Triangles.xlsx", sep="")
+
+# Create a save pathway for cleaned and scored Letter and Digit Span data
+save.pathway_LD <- paste(DataLocation,"FINAL_DS/Behavioral/Children/LettrDig.xlsx", sep="")
+
+# Create a save pathway for the outcome of the ID reports
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/Triangles_LettrDig_Notes.csv", sep="")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
 
 # Check the IDs for errors
-source("Scoring/IDError_FUNCTION.R")
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
 TR_Notes <-check_id_errors("Triangles and LettrDig",
                            Triangles_LettrDig$Child_ID)
 
@@ -51,72 +64,47 @@ names(LB.Items) <- 1:16
 
 new.names <- c("TR_", "NF_", "NB_", "LF_", "LB_")
 
-# Create a list for all of the Items
-Items.list <- list(TR.Items, NF.Items, NB.Items, LF.Items, LB.Items)
+# Create a list for all of the Items and their respective stop rules
+Items.List <- list(TR.Items, NF.Items, NB.Items, LF.Items, LB.Items)
+StopRules <- c(3,4,4,4,4)
 
-# Run a for loop for all Items in the list
-for(ii in 1:length(Items.list)) {
+
+# Call the function to score Lettter and Digit
+source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
+
+# Create a list to save the scored data
+scoredItems_list <- list()
+
+for(ii in 1:length(Items.List)) {
+ 
+  # Score the Letter and Digit Items
+  scoredItems<- scoring_function1(Items.List[[ii]], StopRules[ii])
+
+  # Rename the scored items 
+  names(scoredItems) <- paste0(new.names[ii], names(scoredItems))
   
-  # Extract current Items (these are df)
-  Items <- Items.list[[ii]]
-  
-  # Count the number of 777 (CDK), 888 (NRG), NAs, items given, and total number of items
-  Items$CDK <- rowSums(mutate(Items,across(everything(), ~ str_count(., "777"))), na.rm = T)
-  Items$NRG <- rowSums(mutate(Items,across(everything(), ~ str_count(., "888"))), na.rm = T)
-  Items$NA.Num <- rowSums(is.na(Items))
-  Items$Items.Given <- rowSums(!(is.na(Items)))
-  Items$Total.Items <- length(Items) - 4
-  
-  # Change all rows so if not 1 or 2 they will turn into 0s
-  Items.Cleaned <- data.frame(apply(Items, 1, function(row) ifelse(row %in% c(1, 2), row, 0)))
-  
-  # Convert the outputs to numeric from character
-  Items.Cleaned.num <- data.frame(do.call(rbind, lapply(Items.Cleaned, function(x) as.numeric(x))))
-  
-  # Take the row sums of Items Cleaned to calculate performance
-  Items$Performance <- rowSums(Items.Cleaned.num)
-  
-  # Rename the variables
-  names(Items) <- paste(new.names[ii], names(Items),sep="")
-  
-  # Update this back into the list
-  Items.list[[ii]] <- Items
+  # Save these scored and cleaned datasets
+  scoredItems_list[[ii]] <- scoredItems
 }
 
 
 # Create the final datasets
-Triangles <- data.frame(cbind(Front), Items.list[[1]])
+Triangles <- data.frame(cbind(Front), scoredItems_list[[1]])
 
-LetterDig <- data.frame(cbind(Front), Items.list[[2]], 
-                        Items.list[[3]], Items.list[[4]], 
-                        Items.list[[5]])
+LetterDig <- data.frame(cbind(Front), scoredItems_list[[2]], 
+                        scoredItems_list[[3]], scoredItems_list[[4]], 
+                        scoredItems_list[[5]])
 
 # Have a composite scores for all Letter and Digit subtest
 LetterDig <- LetterDig %>%
   mutate(LetDig_CDK = NF_CDK + NB_CDK + LF_CDK + NB_CDK,
          LetDig_NRG = NF_NRG + NB_NRG + LF_NRG + NB_NRG,
-         LetDig_NA.Num = NF_NA.Num + NB_NA.Num + LF_NA.Num + NB_NA.Num,
-         LetDig_Items.Given = NF_Items.Given + NB_Items.Given + LF_Items.Given + NB_Items.Given,
-         LetDig_Total.Items = NF_Total.Items + NB_Total.Items + LF_Total.Items + NB_Total.Items,
+         LetDig_NA.Num = NF_NA_num + NB_NA_num + LF_NA_num + NB_NA_num,
          LetDig_Performance = NF_Performance + NB_Performance + LF_Performance + NB_Performance)
-
-# Create a save pathway
-save.pathway_TR <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
-                         "Triangles.xlsx", sep="")
-
-save.pathway_LD <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
-                         "LettrDig.xlsx", sep="")
-
-
 
 # Save the scored data
 write.xlsx(x= Triangles, file = save.pathway_TR)
 write.xlsx(x= LetterDig, file = save.pathway_LD)
-
-
-# Create a save pathway for Notes
-save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
-                            "Triangles_LettrDig_Notes.csv", sep="")
 
 # Save the Notes as a CSV
 write_csv(x = TR_Notes, save.pathway.notes)
