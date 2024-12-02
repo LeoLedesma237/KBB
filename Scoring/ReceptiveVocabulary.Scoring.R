@@ -11,6 +11,20 @@ library(stringr) # str_count()
 # Read in the file
 RecepVocab <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/RecepVocab_Raw.xlsx"))
 
+# Load in Answer Key
+answer_key <- read_excel(paste0(DataLocation,"RAW_DATA/AnswerKeys/RecepVocab_AnswerKey.xlsx"))
+
+# Create a save pathway
+save.pathway_RV <- paste(DataLocation,"FINAL_DS/Behavioral/Children/RecepVocab.xlsx", sep="")
+
+# Create a save pathway for Notes
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/RecepVocab.csv", sep="")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
 # Rename Child_Study_ID var
 RecepVocab <- rename(RecepVocab, Child_ID = Child_Study_ID)
 
@@ -29,46 +43,27 @@ Front <- RecepVocab %>%
 Items <- RecepVocab %>%
   select(PPV1:PPV30)
 
-# Rename Items (Part 1)
-names(Items) <- 1:length(Items)
+# Rename the items
+names(Items) <- paste0("RV_",1:length(Items),"_Raw")
 
-# Cbind them
-RecepVocab2 <- tibble(cbind(Front,Items))
+# Call the function to score each item in Receptive Vocabulary
+source("Scoring/scoring_functions/Scoring_FUNCTION0.R")
+source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
 
-# Count the number of 777 (CDK), 888 (NRG), NAs, items given, and total number of items
-RecepVocab2$CDK <- rowSums(mutate(Items,across(everything(), ~ str_count(., "777"))), na.rm = T)
-RecepVocab2$NRG <- rowSums(mutate(Items,across(everything(), ~ str_count(., "888"))), na.rm = T)
-RecepVocab2$NA.Num <- rowSums(is.na(Items))
-RecepVocab2$Items.Given <- rowSums(!(is.na(Items)))
-RecepVocab2$Total.Items <- length(Items)
+# Score each Item
+Items2 <- scoring_function0(Items, answer_key)
 
-# Load in Answer Key
-answer_key <- read_excel(paste0(DataLocation,"RAW_DATA/AnswerKeys/RecepVocab_AnswerKey.xlsx"))
-answer_key.vec <- do.call(c, c(answer_key))
+# Rename Items the scored Items
+names(Items2) <- paste0("RV_",1:length(Items2))
 
-# Create a function that takes the sum of correct responses
-Scoring.fun <- function(vector) {
-  
-  scores <- sum(vector == answer_key.vec)
-  return(scores)
-}
+# Get the score for the dataset
+Items3 <- scoring_function1(Items2, 30)
 
-# Score Performance
-RecepVocab2$Performance <- apply(Items, 1, Scoring.fun)
-
-# Rename the variables
-names(RecepVocab2) <- c(names(RecepVocab2)[1:3], paste("RV_",names(RecepVocab2)[4:39], sep=""))
-
-# Create a save pathway
-save.pathway_RV <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
-                         "RecepVocab.xlsx", sep="")
+# Save the raw and scored data together
+RecepVocab <- cbind(Front, Items, Items3)
 
 # Save the scored data
-write.xlsx(x= RecepVocab2, file = save.pathway_RV)
-
-# Create a save pathway for Notes
-save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
-                            "RecepVocab.csv", sep="")
+write.xlsx(x= RecepVocab, file = save.pathway_RV)
 
 
 # Save the Notes as a CSV

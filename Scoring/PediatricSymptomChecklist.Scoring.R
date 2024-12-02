@@ -1,7 +1,5 @@
 # This is the script for scoring Pediactric Symptom Checklist
 
-
-
 # Load in Packages
 library(tidyverse)
 library(readxl)
@@ -10,6 +8,17 @@ library(stringr) # str_count()
 
 # Read in the file
 PSC <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Adults/PSC_Raw.xlsx"))
+
+# Create a save pathway
+save.pathway_PSC <- paste(DataLocation,"FINAL_DS/Behavioral/Children/PSC.xlsx", sep="")
+
+# Create a save pathway for Notes
+save.pathway.notes <-  paste(DataLocation,"REPORTS/Individual/PSC.csv", sep="")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
 
 
 # Rename Child_Study_ID var
@@ -30,11 +39,13 @@ Front <- PSC %>%
 Items <- PSC %>%
   select(`_1_Utongauka_kuciswa`:`_40_Ulalyaaba_kugwas_kakwiina_akwaambilwa`)
 
+
+
 # Convert Items to numeric
 Items <- data.frame(sapply(Items, function(x) as.numeric(x)))
 
 # Rename Items (Part 1)
-names(Items) <- 1:length(Items)
+names(Items) <- paste0("PS",1:length(Items))
 
 # Cbind them
 PSC2 <- tibble(cbind(Front,Items))
@@ -50,18 +61,11 @@ PSC2$Performance = rowSums(Items)
 # Rename the variables
 names(PSC2) <- c(names(PSC2)[1:3], paste("PSC_",names(PSC2)[4:47], sep=""))
 
-# Create a save pathway
-save.pathway_PSC <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
-                          "PSC.xlsx", sep="")
 
 
 # Save the scored data
 write.xlsx(x= PSC2, file = save.pathway_PSC)
   
-
-# Create a save pathway for Notes
-save.pathway.notes <-  paste(DataLocation,"REPORTS/Individual/",
-                             "PSC.csv", sep="")
 
 
 # Save the Notes as a CSV

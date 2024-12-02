@@ -108,6 +108,7 @@ scoring_function1 <- function(items, stopRuleNum) {
   Performance <- do.call(c, Performance_list)
 
   # Save this information in the original dataset given
+  items$StopRule_Num <- StopRuleNum
   items$CDK <- CDK_Num
   items$NRG <- NRG_Num
   items$SR_Met <- StopRuleMet

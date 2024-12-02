@@ -10,6 +10,18 @@ library(stringr)
 # Read in the file
 PatternReasoning <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/PatternReas_Raw.xlsx"))
 
+# Create a save pathway
+save.pathway <- paste(DataLocation,"FINAL_DS/Behavioral/Children/PatternReas.xlsx", sep="")
+
+# Create a save pathway for Notes
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/PatternReas_Notes.csv", sep="")
+
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
 
 # Check the IDs for errors
 source("Scoring/scoring_functions/IDError_FUNCTION.R")
@@ -22,45 +34,47 @@ Front <- PatternReasoning %>%
          Evaluator_ID,
          Date_of_Evaluation)
 
+# Only scored items
 Items <- PatternReasoning %>%
   select(paste("Iterm_",1:11,sep=""),
          "Item_12",
          paste("Iterm_",13:36,sep=""))
 
-# Rename the Items (Part 1)
+# Scored items and their times
+All_Items <- PatternReasoning %>%
+  select(Iterm_1:`_38a_Time`)
+  
 
-# Cbind these selected Vars to make a new dataset
-PatternReasoning2 <- cbind(Front, Items)
+# Rename Items
+names(Items) <- paste0("PR_",1:length(Items))
 
-# Count the number of 777 (CDK), 888 (NRG), NAs, items given, and total number of items
-PatternReasoning2$CDK <- rowSums(mutate(Items,across(everything(), ~ str_count(., "777"))), na.rm = T)
-PatternReasoning2$NRG <- rowSums(mutate(Items,across(everything(), ~ str_count(., "888"))), na.rm = T)
-PatternReasoning2$NA.Num <- rowSums(is.na(Items))
-PatternReasoning2$Items.Given <- rowSums(!(is.na(Items)))
-PatternReasoning2$Total.Items <- length(Items)
+# Rename All Items
+All_Items_Var1 <- sapply(str_split(names(All_Items),"_"), function(x) x[2])
+names(All_Items) <- sapply(All_Items_Var1, function(x) 
+  if(grepl("a",x)) {
+    x <- gsub("a","",x)
+    return(paste0("PR_",x,"_sec"))
+  
+    } else {
+      return(paste0("PR_",x))
+    
+  }
+)
 
-# Change all rows so if not 1 or 2 they will turn into 0s
-Items.Cleaned <- data.frame(apply(Items, 1, function(row) ifelse(row %in% c(1, 2), row, 0)))
 
-# Convert the outputs to numeric from character
-Items.Cleaned.num <- data.frame(do.call(rbind, lapply(Items.Cleaned, function(x) as.numeric(x))))
+# Call the function to score Pattern Reasoning
+source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
 
-# Take the row sums of Items Cleaned to calculate performance
-PatternReasoning2$Performance <- rowSums(Items.Cleaned.num)
+# Score the Pattern Reasoning Items
+scoredItems <- scoring_function1(Items, 4)
 
-# Change The names of the variables so we know it is pattern reasoning
-names(PatternReasoning2) <- c(names(PatternReasoning2)[1:3], paste("PR_",names(PatternReasoning2)[4:45], sep=""))
+# Introduce them into the dataset
+PatternReasoning <- cbind(Front, All_Items, select(scoredItems,StopRule_Num:Performance))
 
-# Create a save pathway
-save.pathway <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
-                     "PatternReas_Processed.xlsx", sep="")
 
 # Save the scored data
-write.xlsx(x= PatternReasoning2, file = save.pathway)
+write.xlsx(x= PatternReasoning, file = save.pathway)
 
-# Create a save pathway for Notes
-save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
-                            "PatternReas_Notes.csv", sep="")
 
 # Save the Notes as a CSV
 write_csv(x = PR_Notes, save.pathway.notes)
