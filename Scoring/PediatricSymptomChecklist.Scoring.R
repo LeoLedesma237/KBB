@@ -16,7 +16,7 @@ PSC <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Adults/PSC_Raw.xlsx")
 PSC <- rename(PSC, Child_ID = Child_Study_ID)
 
 # Check the IDs for errors
-source("Scoring/IDError_FUNCTION.R")
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
 PSC_Notes <-check_id_errors("Pediatric Symptom Checklist",
                             PSC$Child_ID)
 

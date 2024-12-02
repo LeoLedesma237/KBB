@@ -12,7 +12,7 @@ PatternReasoning <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children
 
 
 # Check the IDs for errors
-source("Scoring/IDError_FUNCTION.R")
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
 PR_Notes <-check_id_errors("Pattern Reasoning",
                            PatternReasoning$Child_ID)
 

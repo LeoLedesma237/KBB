@@ -9,9 +9,10 @@ library(openxlsx)
 BRIEF2SR <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/BRIEF2_SF_Raw.xlsx"))
 
 # Check the IDs for errors
-source("Scoring/IDError_FUNCTION.R")
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
 BRSR_Notes <-check_id_errors("BRIEF2 Self Report",
                            BRIEF2SR$Child_ID)
+
 
 
 # Select Vars of Interest

@@ -15,7 +15,7 @@ RecepVocab <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/Recep
 RecepVocab <- rename(RecepVocab, Child_ID = Child_Study_ID)
 
 # Check the IDs for errors
-source("Scoring/IDError_FUNCTION.R")
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
 RV_Notes <-check_id_errors("Receptive Vocabulary",
                 RecepVocab$Child_ID)
 

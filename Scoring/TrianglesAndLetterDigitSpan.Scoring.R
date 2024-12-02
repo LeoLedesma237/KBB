@@ -66,7 +66,7 @@ new.names <- c("TR_", "NF_", "NB_", "LF_", "LB_")
 
 # Create a list for all of the Items and their respective stop rules
 Items.List <- list(TR.Items, NF.Items, NB.Items, LF.Items, LB.Items)
-StopRules <- c(3,4,4,4,4)
+StopRules <- c(5,4,4,4,4)
 
 
 # Call the function to score Lettter and Digit

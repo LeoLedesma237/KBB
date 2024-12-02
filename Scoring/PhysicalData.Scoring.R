@@ -11,7 +11,7 @@ Physical.data <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/Ph
 
 
 # Check the IDs for errors
-source("Scoring/IDError_FUNCTION.R")
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
 PD_Notes <-check_id_errors("Physical Data",
                            Physical.data$Child_ID)
 
