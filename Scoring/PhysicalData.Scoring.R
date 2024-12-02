@@ -9,6 +9,17 @@ library(openxlsx)
 # Load in the data
 Physical.data <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/PhysicalData_Raw.xlsx"))
 
+# Create a save pathway
+save.pathway_PD <- paste(DataLocation,"FINAL_DS/Behavioral/Children/PhysicalData.xlsx", sep="")
+
+# Create a save pathway for Notes
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/PhysicalData.csv", sep="")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
 
 # Check the IDs for errors
 source("Scoring/scoring_functions/IDError_FUNCTION.R")
@@ -92,6 +103,11 @@ for(ii in 1:nrow(Hearing.Items)) {
   score.2000hz <- gsub(pattern ="_2|L|R", replacement = "", x = score.2000hz)
   score.1000hz <- gsub(pattern ="_2|L|R", replacement = "", x = score.1000hz)
   
+  # Convert these characters into numeric
+  score.4000hz <- as.numeric(gsub(pattern = "dB","", score.4000hz))
+  score.2000hz <- as.numeric(gsub(pattern = "dB","", score.2000hz))
+  score.1000hz <- as.numeric(gsub(pattern = "dB","", score.1000hz))
+  
   if(length(score.4000hz) == 2 & length(score.2000hz) == 2 & length(score.1000hz) == 2) {
   # Create a dataframe with decibels heared for each Hz
   scoring.df <- tibble(Ear = c("Left", "Right"),
@@ -103,18 +119,21 @@ for(ii in 1:nrow(Hearing.Items)) {
   scoring.df.wide <- scoring.df %>%
     pivot_wider(names_from = Ear, values_from = c(`1000Hz`, `2000Hz`, `4000Hz`))
   
+  # Add db information to the variable names
+  names(scoring.df.wide) <- paste0(names(scoring.df.wide),"_dB")
+  
   # Save it into a list 
   Hearing.Scoring.List[[ii]] <- scoring.df.wide
   
   } else {
     
     # If there is suspect data collection error, return all NA's
-    Hearing.Scoring.List[[ii]] <-  tibble(`1000Hz_Left` = NA,
-                                          `1000Hz_Right` = NA,
-                                          `2000Hz_Left` = NA,
-                                          `2000Hz_Right` = NA, 
-                                          `4000Hz_Left` = NA,
-                                          `4000Hz_Right` = NA)
+    Hearing.Scoring.List[[ii]] <-  tibble(`1000Hz_Left_dB` = NA,
+                                          `1000Hz_Right_dB` = NA,
+                                          `2000Hz_Left_dB` = NA,
+                                          `2000Hz_Right_dB` = NA, 
+                                          `4000Hz_Left_dB` = NA,
+                                          `4000Hz_Right_dB` = NA)
                                           
 }
 
@@ -123,17 +142,10 @@ for(ii in 1:nrow(Hearing.Items)) {
 # Reintroduce the scores back into the dataset
 PhysicalData2 <- cbind(Front, Eyes.Items, Hearing.Items,do.call(rbind,Hearing.Scoring.List))
 
-# Create a save pathway
-save.pathway_PD <- paste(DataLocation,"FINAL_DS/Behavioral/Children/",
-                         "PhysicalData.xlsx", sep="")
 
 # Save the scored data
 write.xlsx(x= PhysicalData2, file = save.pathway_PD)
 
-
-# Create a save pathway for Notes
-save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
-                            "PhysicalData.csv", sep="")
 
 # Save the Notes as a CSV
 write_csv(x = PD_Notes, save.pathway.notes)

@@ -8,6 +8,26 @@ library(openxlsx)
 # Read in the file
 BRIEF2PF <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Adults/BRIEF2_Parent_Raw.xlsx"))
 
+# Load in the subtest information
+BRIEF2_subtests <- read_excel(paste0(DataLocation,"RAW_DATA/AnswerKeys/BRIEF2ParentForm.xlsx"))
+
+# Now let's score the validity portion
+BREIF2_validity <- read_excel(paste0(DataLocation,"RAW_DATA/AnswerKeys/BRIEF2ParentForm.xlsx"), sheet = "Validity")
+
+# Create a save pathway
+save.pathway_BRPF <- paste(DataLocation,"FINAL_DS/Behavioral/Adults/BRIEF2_Parent.xlsx", sep="")
+
+# Create a save pathway for Notes
+save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/BRIEF2_Parent.csv", sep="")
+
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
+
+
 # Check the IDs for errors
 source("Scoring/scoring_functions/IDError_FUNCTION.R")
 BRPF_Notes <-check_id_errors("BRIEF2 Parent Form",
@@ -40,14 +60,10 @@ BRIEF2PF2 <- tibble(cbind(Front,Items2))
 
 # Count the number of NAs, items given, and total number of items
 BRIEF2PF2$NA.Num <- rowSums(is.na(Items2))
-BRIEF2PF2$Items.Given <- rowSums(!(is.na(Items2)))
-BRIEF2PF2$Total.Items <- length(Items2)
 
 # Change The names of the variables so we know it is pattern reasoning
 names(BRIEF2PF2) <- c(names(BRIEF2PF2)[1:3], paste("BRPF_",names(BRIEF2PF2)[4:69], sep=""))
 
-# Load in the subtest information
-BRIEF2_subtests <- read_excel(paste0(DataLocation,"RAW_DATA/AnswerKeys/BRIEF2ParentForm.xlsx"))
 
 # Get the subtest as a variable
 subtest <- BRIEF2_subtests$Subtest
@@ -94,8 +110,6 @@ AllConstructsScored <- AllConstructsScored %>%
 BRIEF2PF3 <- cbind(BRIEF2PF2, AllConstructsScored)
 
 
-# Now let's score the validity portion
-BREIF2_validity <- read_excel(paste0(DataLocation,"RAW_DATA/AnswerKeys/BRIEF2ParentForm.xlsx"), sheet = "Validity")
 
 # Save the validity questions as an object
 Validity <- paste0("Q",BREIF2_validity$Question,"_",BREIF2_validity$Validity)
@@ -139,16 +153,10 @@ BRIEF2PF3 <- mutate(BRIEF2PF3, Inconsistency = case_when(
 ))
 
 
-# Create a save pathway
-save.pathway_BRPF <- paste(DataLocation,"FINAL_DS/Behavioral/Adults/",
-                           "BRIEF2_Parent.xlsx", sep="")
 
 # Save the scored data
 write.xlsx(x= BRIEF2PF3, file = save.pathway_BRPF)
 
-# Create a save pathway for Notes
-save.pathway.notes <- paste(DataLocation,"REPORTS/Individual/",
-                            "BRIEF2_Parent.csv", sep="")
 
 # Save the Notes as a CSV
 write_csv(x = BRPF_Notes, save.pathway.notes)

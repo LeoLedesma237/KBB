@@ -36,38 +36,34 @@ Front <- PSC %>%
          Evaluator_ID = Evalutator_ID,
          Date_of_Evaluation)
 
+# Only items to be scored (1:40)
 Items <- PSC %>%
   select(`_1_Utongauka_kuciswa`:`_40_Ulalyaaba_kugwas_kakwiina_akwaambilwa`)
 
-
+# Scores items plus an additional few variables (not total score)
+All_Items <- PSC %>%
+  select(`_1_Utongauka_kuciswa`:`Sena_mwana_wenu_kuli_dika_kuti_agwasyigwe`) %>%
+  select(-Mweelwe_wajanwa_total_Score_)
 
 # Convert Items to numeric
 Items <- data.frame(sapply(Items, function(x) as.numeric(x)))
 
-# Rename Items (Part 1)
-names(Items) <- paste0("PS",1:length(Items))
+# Rename Items
+names(Items) <- paste0("PS_",1:length(Items))
+names(All_Items) <- c(paste0("PS_",1:length(Items)), names(All_Items)[length(Items)+1:length(All_Items)])
 
-# Cbind them
-PSC2 <- tibble(cbind(Front,Items))
+# Call the function to score each item in Receptive Vocabulary
+source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
 
-# Count the number NAs, items given, and total number of items
-PSC2$NA.Num <- rowSums(is.na(Items))
-PSC2$Items.Given <- rowSums(!(is.na(Items)))
-PSC2$Total.Items <- length(Items)
+# Get the score for the dataset
+Items <- scoring_function1(Items, 40)
 
-# Scoring Performance
-PSC2$Performance = rowSums(Items)
-  
-# Rename the variables
-names(PSC2) <- c(names(PSC2)[1:3], paste("PSC_",names(PSC2)[4:47], sep=""))
-
-
+# Introduce the scored metrics into the dataset
+PSC <- cbind(Front, All_Items, select(Items, StopRule_Num:Performance))
 
 # Save the scored data
-write.xlsx(x= PSC2, file = save.pathway_PSC)
+write.xlsx(x= PSC, file = save.pathway_PSC)
   
-
-
 # Save the Notes as a CSV
 write_csv(x = PSC_Notes, save.pathway.notes)
 
