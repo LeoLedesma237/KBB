@@ -40,14 +40,14 @@ Front <- BRIEF2PF %>%
          Evaluator_ID,
          Date_of_Evaluation)
 
-Items <- BRIEF2PF %>%
+Items_Raw <- BRIEF2PF %>%
   select(`_1`:`_63`)
 
-# Rename Items (Part 1)
-names(Items) <- 1:length(Items)
+# Rename the Raw Items
+names(Items_Raw) <- paste0("BSPF_",1:length(Items_Raw),"_Raw")
 
 # Change the Character Values to Numeric
-Items2 <- Items %>%
+Items <- Items_Raw %>%
   mutate_all(~ case_when(
     . == "N" ~ 1,
     . == "S" ~ 2,
@@ -55,21 +55,18 @@ Items2 <- Items %>%
     TRUE ~ NA  
   ))
 
+# Rename the scored items
+names(Items) <- paste0("BSPF_",1:length(Items))
+
+
 # Cbind them
-BRIEF2PF2 <- tibble(cbind(Front,Items2))
-
-# Count the number of NAs, items given, and total number of items
-BRIEF2PF2$NA.Num <- rowSums(is.na(Items2))
-
-# Change The names of the variables so we know it is pattern reasoning
-names(BRIEF2PF2) <- c(names(BRIEF2PF2)[1:3], paste("BRPF_",names(BRIEF2PF2)[4:69], sep=""))
-
+BRIEF2PF2 <- tibble(cbind(Front,Items_Raw, Items))
 
 # Get the subtest as a variable
 subtest <- BRIEF2_subtests$Subtest
 
 # Rename the variables to the subtest names (makes indexing easy later)
-names(Items2) <- subtest
+names(Items) <- subtest
 
 # Obtain the rowSums of all variables that measure the same construct
 allConstructs <- sort(unique(subtest))
@@ -80,7 +77,7 @@ RowSums_list <- list()
 for(ii in 1:length(allConstructs)) {
   
   # Extract the column names for each construct 
-  currentConstruct <- Items2[,grepl(pattern = allConstructs[ii], subtest)]
+  currentConstruct <- Items[,grepl(pattern = allConstructs[ii], subtest)]
   
   # Calculate the Row means
   ConstructScored <- data.frame(rowSums(currentConstruct))
@@ -105,23 +102,25 @@ AllConstructsScored <- AllConstructsScored %>%
          CRI = Initiate + Working_Memory + Plan_Organize + Task_Monitor + Organization_of_Materials,
          GEC = BRI + ERI + CRI)
 
+# Count the number of NAs, items given, and total number of items
+BRIEF2PF2$NA.Num <- rowSums(is.na(Items))
+
 
 # Now introduce all of these scored measures into the final dataset
 BRIEF2PF3 <- cbind(BRIEF2PF2, AllConstructsScored)
-
 
 
 # Save the validity questions as an object
 Validity <- paste0("Q",BREIF2_validity$Question,"_",BREIF2_validity$Validity)
 
 # Rename the variables for validity scoring
-names(Items2) <- Validity
+names(Items) <- Validity
 
 # Extracting all items for each validity measure
-Negativity <- Items2[,grepl(pattern = "Negativity", Validity)]
-Infrequency <- Items2[,grepl(pattern = "Infrequency", Validity)]
-Inconsistency1 <- Items2[,grepl(pattern = "Inconsistency1", Validity)]
-Inconsistency2 <- Items2[,grepl(pattern = "Inconsistency2", Validity)]
+Negativity <- Items[,grepl(pattern = "Negativity", Validity)]
+Infrequency <- Items[,grepl(pattern = "Infrequency", Validity)]
+Inconsistency1 <- Items[,grepl(pattern = "Inconsistency1", Validity)]
+Inconsistency2 <- Items[,grepl(pattern = "Inconsistency2", Validity)]
 
 # Scoring Negativity
 BRIEF2PF3$NegativityScore <- rowSums(Negativity == 3)
