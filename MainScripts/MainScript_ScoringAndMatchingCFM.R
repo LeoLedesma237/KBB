@@ -1,32 +1,43 @@
-# Run Previous Scripts
-setwd("~/GitHub/LeoWebsite/KBB.Scripts")
+# Set the location for your working directory (Where your scripts are saved)
+WorkingDirectory <- "C:/Users/lledesma.TIMES/Documents/GitHub/KBB/"
 
-source("CFM2_4.Scoring.R")
-source("CFM5_17.Scoring.R")
-source("CFM.Before.Matching.R")
+# Set the location for where your data is saved
+DataLocation <- "C:/Users/lledesma.TIMES/Documents/KBB/Data/"
+
+# Set the pathway for the final screener data
+FinalData_PW <- paste0(DataLocation,"FINAL_DS/Screener/")
+
+# Set the pathway to the final matched sibling data
+MatchedSibling_PW <- paste0(DataLocation,"FINAL_DS/Screener/Matched_Siblings/")
+
+
+#########################                          ############################
+######################                                 ########################
+###################### REST OF THE SCRIPT IS AUTOMATIC ########################
+######################                                 ########################
+##########################                        #############################
+
+# Set the working directory
+setwd(WorkingDirectory)
+
+# Run the main script that uses API to download the data and score it
+source("MainScripts/MainScript_ImportingAllDatafromKoboToolBoxandScoringIt.R")
+
 
 # Remove all global environment objects to declutter
-rm(list=ls())
+#rm(list=ls())
+
+# Load in each dataset (All Recently Scored)
+Incorrect.Screeners <- read_excel(paste0(FinalData_PW, "1) Incorrect Screeners (level 1).xlsx"))
+Excluded.Children <- read_excel(paste0(FinalData_PW, "2) Excluded Children (level 1).xlsx"))
+HOH.No.Matches.unnested <- read_excel(paste0(FinalData_PW, "3) HOH No Matches (level 1).xlsx"))
+HOH.Potential.Matches.unnested <- read_excel(paste0(FinalData_PW, "4) HOH Potential Matches (level 1).xlsx"))
 
 
-# Set the working directory
-setwd("~/KBB_new_2/1_screener/final_data")
-
-# Load in each dataset
-Incorrect.Screeners <- read_excel("1) Incorrect Screeners (level 1).xlsx")
-Excluded.Children <- read_excel("2) Excluded Children (level 1).xlsx")
-HOH.No.Matches.unnested <- read_excel("3) HOH No Matches (level 1).xlsx")
-HOH.Potential.Matches.unnested <- read_excel("4) HOH Potential Matches (level 1).xlsx")
-
-
-
-# Set the working directory
-setwd("~/KBB_new_2/matched_siblings")
-
-# Load in the ID Tracker (each tab) 
-Siblings <- read_excel("Final ID Tracker.xlsx", sheet= "Siblings")
-Half_Siblings <- read_excel("Final ID Tracker.xlsx", sheet= "Half-Siblings")
-Other <- read_excel("Final ID Tracker.xlsx", sheet= "Other")
+# Load in the IDs that have been categoriazed in Final_ID_Tracker.xlsx 
+Siblings <- read_excel(paste0(MatchedSibling_PW,"Final_ID_Tracker.xlsx"), sheet= "Siblings")
+Half_Siblings <- read_excel(paste0(MatchedSibling_PW,"Final_ID_Tracker.xlsx"), sheet= "Half-Siblings")
+Other <- read_excel(paste0(MatchedSibling_PW,"Final_ID_Tracker.xlsx"), sheet= "Other")
 
 # Combine these ID's into accounted for IDs
 accounted.for.IDs <- c(Siblings$Child_ID, Half_Siblings$Child_ID, Other$Child_ID)
@@ -45,18 +56,17 @@ HOH.Potential.Matches.unnested.final <- HOH.Potential.Matches.unnested %>%
   filter(!(Child_ID %in% accounted.for.IDs))  
 
 
-
-# Set working directory
-setwd("~/KBB_new_2/matched_siblings")
-
 # Save the partialled out HOH Potential Matches
 HOH.Potential.Matches.unnested.final.shorted <- HOH.Potential.Matches.unnested.final %>%
   select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary) %>%
   arrange(HOH_ID)
 
-# Save the dataset
-write.xlsx(list(data = HOH.Potential.Matches.unnested.final.shorted), file =  "Subjects that need an ID.xlsx")
+# Minor data cleaning (reading data creates a time for date variables)
+HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation <- as.character(HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation)
+HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth <- as.character(HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth)
 
+# Save the dataset
+write.xlsx(list(data = HOH.Potential.Matches.unnested.final.shorted), file =  paste0(MatchedSibling_PW,"Subjects_that_need_an_ID.xlsx"))
 
 
 
@@ -73,6 +83,9 @@ Reconstructed.data.final <- rbind(Incorrect.Screeners.final,
 
 # Give it an empty variable that represents ID
 Reconstructed.data.final$ID <- NA
+
+# Convert the DOE into character
+Reconstructed.data.final$Date_of_Evaluation <- as.character(Reconstructed.data.final$Date_of_Evaluation)
 
 # Keep the same variables in the same order as ID. Tracker
 Reconstructed.data.final <- Reconstructed.data.final[, c(names(Manual.Groupings))]
@@ -99,25 +112,18 @@ Final.Data <- Final.Data %>%
 # Get an overview of the dataset
 data.frame(Frequency = cbind(table(Final.Data$Overall.Summary)))
 
-# Set the working directory
-setwd("~/KBB_new_2")
-
 # Save the data
-write.xlsx(list(data = Final.Data), file =  "Comprehensive Screener Scoring.xlsx")
+write.xlsx(list(data = Final.Data), file =  paste0(FinalData_PW, "Comprehensive Screener Scoring.xlsx"))
 
 
 
 
 # Quick modification
-setwd("~/KBB_new_2/matched_siblings")
-Siblings.DOE.arranged <- read_excel("Final ID Tracker.xlsx", sheet= "Siblings") %>%
+Siblings.DOE.arranged <- read_excel(paste0(MatchedSibling_PW, "Final_ID_Tracker.xlsx"), sheet= "Siblings") %>%
   arrange(Date_of_Evaluation)
 
 # Save the data
-write.xlsx(list(data = Siblings.DOE.arranged), file =  "Final ID Tracker send to A.xlsx")
-
-
-
+write.xlsx(list(data = Siblings.DOE.arranged), file =  paste0(MatchedSibling_PW, "Final_ID_Tracker_send_to_A.xlsx"))
 
 
 
@@ -126,11 +132,9 @@ sum(duplicated(Final.Data$Child_ID))
 Final.Data$Child_ID[duplicated(Final.Data$Child_ID)]
 
 
-# Set the save directory
-setwd("~/KBB_new_2/1_screener/final_data")
 
 # Load in data
-Binded.data <- read_excel("All Children.xlsx")
+Binded.data <- read_excel(paste0(FinalData_PW, "All Children.xlsx"))
 
 # Compare ID's (should equal 0)
 setdiff(Final.Data$Child_ID, Binded.data$Child_ID)

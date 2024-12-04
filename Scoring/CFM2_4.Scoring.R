@@ -4,19 +4,25 @@ library(readxl)
 library(lubridate)
 
 
-# Set working directory to import data
-setwd("~/KBB_new_2/1_screener/raw_data")
-
 # Load in CFM2_4 files
-CFM2_4.uncleaned <- read_excel(list.files(pattern = "3_4"))
+CFM2_4.uncleaned <- read_excel(paste0(DataLocation,"RAW_DATA/Screener/CFM2_4_Raw.xlsx"))
+
+# Create a save pathway
+save.pathwayCFM2_4 <- paste0(DataLocation,"MODIFIED_DS/Screener/CFM2_4_clean.csv")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
 
 # Remove any redundant rows
 CFM2_4.uncleaned <- unique(CFM2_4.uncleaned)
 
 # Selecting and renaming variables to keep
 CFM2_4.removed.variables <- CFM2_4.uncleaned %>%
-  select(GPS.lat = `_GPS_latitude`,
-         GPS.long = `_GPS_longitude`,
+  select(GPS.lat = `GPS_latitude`,
+         GPS.long = `GPS_longitude`,
          Date_of_Evaluation = start,
          Evaluator_ID,
          Name_of_the_Village,
@@ -246,6 +252,11 @@ epilepsy_negative_questions <- CFM2_4 %>%
          EN11,
          EN12)
 
+# Convert these datasets into numeric
+epilepsy_positive_questions <- sapply(epilepsy_positive_questions, function(x) as.numeric(x))
+epilepsy_negative_questions <- sapply(epilepsy_negative_questions, function(x) as.numeric(x))
+
+
 # Any NA's present convert them into 0's
 epilepsy_positive_questions[is.na(epilepsy_positive_questions)] <- 0
 epilepsy_negative_questions[is.na(epilepsy_negative_questions)] <- 0
@@ -321,13 +332,7 @@ CFM2_4 <- CFM2_4 %>%
   ))
 
 
-# Set working directory to save the data
-setwd("~/KBB_new_2/1_screener/processed_data")
 
 # Save the data
-write_csv(CFM2_4, file = "CFM2_4_clean.csv")
+write_csv(CFM2_4, file = save.pathwayCFM2_4)
 
-
-
-# Set working directory to where the scripts are
-setwd("~/GitHub/LeoWebsite/KBB.Scripts")

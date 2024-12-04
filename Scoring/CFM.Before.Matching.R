@@ -3,12 +3,24 @@ library(readxl)
 library(lubridate)
 library(openxlsx) # To save excel files with multiple tabs
 
-# Set working directory
-setwd("~/KBB_new_2/1_screener/processed_data")
 
-# Load in all data to be matched
-CFM2_4 <- read.csv("CFM2_4_clean.csv")
-CFM5_17 <- read.csv("CFM5_17_clean.csv")
+# Set the directory to the clean screener
+CleanedScreener_pw <- paste0(DataLocation,"MODIFIED_DS/Screener/")
+
+# Set the save directory
+save.pathwayScreener <- paste0(DataLocation,"FINAL_DS/Screener/")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########                                   #############
+
+# Load the cleaned CFM2_4
+CFM2_4 <- read_csv(paste0(CleanedScreener_pw,"CFM2_4_clean.csv"))
+
+# Load the cleaned CFM5_17
+CFM5_17 <- read_csv(paste0(CleanedScreener_pw,"CFM5_17_clean.csv"))
+
 
 # Select the variables that both datasets have in common
 CFM2_4 <- CFM2_4 %>%
@@ -86,10 +98,12 @@ CFM5_17$Screener.Type <- rep("CFM5_17", nrow(CFM5_17))
 # Bind the datasets
 Binded.data <- rbind(CFM2_4, CFM5_17)
 
+
+
 # Halt children after this date
-Day = '10'
-Month = '09'
-Year =  '2023'
+#Day = '10'
+#Month = '09'
+#Year =  '2023'
 
 #Binded.data <- Binded.data %>% 
 #  filter(Date_of_Evaluation < paste(Year, Month, Day, sep="-"))
@@ -182,16 +196,16 @@ Excluded.Children$Overall.Summary <- "Excluded Children"
 HOH.No.Matches.unnested$Overall.Summary <- "No Matches Within HOH"
 HOH.Potential.Matches.unnested$Overall.Summary <- "To be Determined"
 
+## Sort by date (Not Matches- it is better if they are alphabetical)
+Incorrect.Screeners <- Incorrect.Screeners %>% arrange(Date_of_Evaluation)
+Excluded.Children <- Excluded.Children %>% arrange(Date_of_Evaluation)
+HOH.No.Matches.unnested <- HOH.No.Matches.unnested %>% arrange(Date_of_Evaluation)
 
-# Set the save directory
-setwd("~/KBB_new_2/1_screener/final_data")
 
 # Save level one datasets
-write.xlsx(list(data = Incorrect.Screeners), file =  "1) Incorrect Screeners (level 1).xlsx")
-write.xlsx(list(data = Excluded.Children), file =  "2) Excluded Children (level 1).xlsx")
-write.xlsx(list(data = HOH.No.Matches.unnested), file =  "3) HOH No Matches (level 1).xlsx")
-write.xlsx(list(data = HOH.Potential.Matches.unnested), file =  "4) HOH Potential Matches (level 1).xlsx")
-write.xlsx(list(data = Binded.data), file =  "All Children.xlsx")
+write.xlsx(list(data = Incorrect.Screeners), file =  paste0(save.pathwayScreener,"1) Incorrect Screeners (level 1).xlsx"))
+write.xlsx(list(data = Excluded.Children), file =  paste0(save.pathwayScreener,"2) Excluded Children (level 1).xlsx"))
+write.xlsx(list(data = HOH.No.Matches.unnested), file =  paste0(save.pathwayScreener,"3) HOH No Matches (level 1).xlsx"))
+write.xlsx(list(data = HOH.Potential.Matches.unnested), file =  paste0(save.pathwayScreener,"4) HOH Potential Matches (level 1).xlsx"))
+write.xlsx(list(data = Binded.data), file =  paste0(save.pathwayScreener,"All Children.xlsx"))
 
-# Set working directory to where the scripts are
-setwd("~/GitHub/LeoWebsite/KBB.Scripts")

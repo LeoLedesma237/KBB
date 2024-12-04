@@ -162,7 +162,7 @@ write_csv(x = BRPF_Notes, save.pathway.notes)
 
 
 # Make a note that the data was saved successfully
-cat("Saving processed BRIEF2 Self Report\n")
+cat("Saving processed BRIEF2 Parent Form\n")
 
 # Remove all global environment objects to declutter
 rm(list = ls()[!(ls() %in% c("DataLocation"))])

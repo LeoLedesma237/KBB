@@ -21,13 +21,11 @@ library(openxlsx) # To save excel files with multiple tabs
 
 ```{r load in the data, echo = F, warning = FALSE}
 # Set the working directory
-setwd("~/KBB_new_2")
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener")
 
 # Load the ID data
 Comprehensive.Screener.data <- read_excel("Comprehensive Screener Scoring.xlsx")
 
-# Set the working directory
-setwd("~/KBB_new_2/1_screener/final_data")
 
 # Load in the binded data
 Binded.data <- read_excel("All Children.xlsx")

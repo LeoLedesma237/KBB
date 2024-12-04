@@ -48,7 +48,7 @@ save.pathway.CSV <- paste(DataLocation,"REPORTS/",
 write_csv(x= combined.data2, file = save.pathway.CSV)
 
 # Remove all global environment objects to declutter
-rm(list = ls()[!(ls() %in% c("DataLocation", "combined.data2"))])
+#rm(list = ls()[!(ls() %in% c("DataLocation", "combined.data2"))])
 
 # Set a pause time for 1 second
 Sys.sleep(1)
