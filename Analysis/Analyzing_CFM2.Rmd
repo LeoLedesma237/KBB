@@ -1,7 +1,7 @@
 ---
-title: "Analyzing CFM data"
+title: "Analyzing CFM data (version 2)"
 author: "Leandro Ledesma"
-date: "2024-04-04"
+date: "2024-12-19"
 output: html_document
 ---
 
@@ -29,120 +29,385 @@ library(boot)
 library(broom)
 library(purrr)
 library(psych)
+library(performance) # icc()
 
 ```
 
 ### Load in the data
 
+We will be loading the CFM2-4 and the CFM5-17 separately. These data are fixed so no new screeners will be introduced into these datasets from the on going data collection. 
+
 
 ```{r load in the data, warning = FALSE}
 # Set working directory
-setwd("~/KBB_new_2/1_screener/final_data")
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/MODIFIED_DS/Screener")
 
-# Manually type in the file name to be loaded
-file.name = "All Children (CFM manuscript).xlsx"
+# Load in the CFM2-4
+CFM2_4 <- read.csv("CFM2_4_clean_CFM_manuscript.csv")
 
-# Save the data
-CFMscreener <- read_excel(file.name)
+# Load in the CFM5-17
+CFM5_17 <- read.csv("CFM5_17_clean_CFM_manuscript.csv")
 
 ```
 
 ### Preparing data
 
-```{r potentially problematic screeners}
-CFM2_4 <- CFMscreener %>%
-  filter(Screener.Type == "CFM2_4")
+- We will be keep variables of interest which include:
+- Level of reported difficulty for each domain for both screeners
+- The child_ID, which will be given a random intercept
+- The HOH_ID, which will be given a random intercept
+- Age and Sex
+- Their DD status as a 'at least some difficulty', 'at least a lot of difficulty', 'cannot at all' 
+- Accessibility to assisting equipment
 
-CFM5_17 <- CFMscreener %>%
-  filter(Screener.Type == "CFM5_17")
 
-# Potentially problematic IDs
-problematic.2_4 <- CFM2_4 %>%
-  filter(Child_age > 5)
+```{r keeping variables of interest}
+# Selective variables of interest
+CFM2_4_vars <- CFM2_4 %>%
+  select(HOH_ID, 
+         Child_ID, 
+         Child_age, 
+         Child_Gender, 
+         CF3_Seeing:CF16_Controlling_Behavior, 
+         CFM_DD,
+         glasses:walking.equipment)
 
-problematic.5_17 <- CFM5_17 %>%
-  filter(Child_age < 4.5)
+CFM5_17_vars <- CFM5_17 %>%
+  select(HOH_ID, 
+         Child_ID, 
+         Child_age, 
+         Child_Gender, 
+         CF3_Seeing:CF24_Depression, 
+         CFM_DD,
+         DD_mental,
+         glasses:walking.equipment)
+```
 
-# Problematic data rbinded
-problematic.data <- rbind(problematic.2_4, problematic.5_17)
 
-# Save the problematic data
-setwd("~/KBB_new_2/errors")
+### Data Cleaning
 
-write.xlsx(problematic.data,
-           "wrong.screener.xlsx")
+- We need to remove incorrectly used screeners
+- Additionally we need to check for anything that indicates bad data (wrong ages, etc.)
 
-# Remove problematic screeners
-CFM2_4 <- CFM2_4 %>%
-  filter(!(Child_ID %in% problematic.data$Child_ID))
+```{r data cleaning}
+# Set the working directory for the incorrect screener location
+setwd("~/KBB/Data/FINAL_DS/Screener")
 
-CFM5_17 <- CFM5_17 %>%
-  filter(!(Child_ID %in% problematic.data$Child_ID))
+# Load in the incorrect screeners
+incorrect_screeners <- read_excel("1) Incorrect Screeners (level 1).xlsx")
 
-data <- CFMscreener %>%
-  filter(!(Child_ID %in% problematic.data$Child_ID))
+# Remove children ID that match that of the incorrect screener
+CFM2_4_vars <- filter(CFM2_4_vars, !Child_ID %in% incorrect_screeners$Child_ID)
+CFM5_17_vars <- filter(CFM5_17_vars, !Child_ID %in% incorrect_screeners$Child_ID)
 
-# Problematic Ages (CFM5-17)
-problematic.5_17.age <- CFM5_17 %>%
-  filter(Child_age > 19) 
+# Remove any children that are too old or young- it seems okay tbh
+summary(CFM2_4_vars$Child_age)
+summary(CFM5_17_vars$Child_age)
 
-# Remove subjects with the incorrect Age
-CFM5_17 <- CFM5_17 %>%
-  filter(!(Child_ID %in% problematic.5_17.age$Child_ID))
+# Remove rows with any missing data
+sum(is.na(CFM2_4_vars)) #0
+sum(is.na(CFM5_17_vars)) #2- will keep since it is just for glasses/hearing aid questions
 
-data <- data %>%
-  filter(!(Child_ID %in% problematic.5_17.age$Child_ID))
-
-# Remove subjects with missing demographic information
-data <- data %>%
-  drop_na(Child_age, Child_Gender)
-
-CFM2_4 <- CFM2_4 %>%
-  drop_na(Child_age, Child_Gender)
-
-CFM5_17 <- CFM5_17 %>%
-  drop_na(Child_age, Child_Gender)
 
 ```
+
+
 
 ### Initial data inspection
 
 ```{r intial data inspection, results='asis'}
-
-cat("This following message was constructed with code using the 'asis' argument for results. The imported dataset has the following name: ",file.name,". It contains", nrow(CFMscreener),"rows, each which correspond to information about a child that was screened in rural Zambia. There were some issues with the screener information and",nrow(problematic.data),"children were screened with the wrong screener for their age group. Additionally,",nrow(problematic.5_17.age)," children had the incorrect DOB writtern since they are older than the age 19. Lastly, there are instances of missing data for demographic information and these subjects will be dropped. Thus, only",nrow(data),"were kept for further analysis. Additionally, there are two screener types- the CFM2-4 and the CFM5-17. The following tables were constructed from information that came from both of those two screeners. There are",nrow(CFM5_17)," observations in the CFM5-17 screener and ",nrow(CFM2_4),"observations in the CFM2-4 screener.")
+glimpse(CFM2_4_vars)
+glimpse(CFM5_17_vars)
 
 ```
 
 ### Obtain descriptive statistics for both screener types
 
-```{r obtain descriptive statistics of our sample}
-# Select only age information
-age <- data %>%
-  select(Child_age, Screener.Type)
+```{r calculating some descriptive statistics for screener type}
+# For the CFM2_4
+nrow(CFM2_4_vars)
+length(unique(CFM2_4_vars$Child_ID))
+summary(CFM2_4_vars$Child_age)
+table(CFM2_4_vars$Child_Gender)
 
-# Obtain descriptive statistics for each Screener
-describeBy(age, age$Screener.Type)
+# For CFM5_17
+nrow(CFM5_17_vars)
+length(unique(CFM5_17_vars$Child_ID))
+summary(CFM5_17_vars$Child_age)
+table(CFM5_17_vars$Child_Gender)
+```
 
-# Obtain gender information
-gender.screener.type.table <- data.frame(cbind(table(data$Child_Gender, data$Screener.Type))) %>%
-  mutate(Total = CFM2_4 + CFM5_17)
+## Part 1: Prevalence of DD by different threshold for both screeners
 
-# Add a bottom row to the table
-gender.table <- rbind(gender.screener.type.table, 
-      c(rbind(colSums(gender.screener.type.table))))
+```{r creating a table with the prevalence of DD for both screeners by different DD thresholds}
+# Create a new dataset with four variables
+CFM2_4_table1 <- CFM2_4_vars %>%
+  select(CFM_DD) %>%
+  mutate(No_difficulty = ifelse(CFM_DD == "No difficulty", 1, 0),
+         at_least_some_diff = ifelse(CFM_DD != "No difficulty",1,0),
+         at_least_alot_diff = case_when(
+           CFM_DD == "A lot of Difficulty" | CFM_DD == "Cannot at all" ~ 1,
+           TRUE ~ 0),
+         cannot_at_all_diff = ifelse(CFM_DD == "Cannot at all", 1, 0)) %>%
+  select(-CFM_DD)
 
-# Rename the row names 
-row.names(gender.table) <- c("female", "male", "Total")
+# Create a new dataset with four variables including mental health
+CFM5_17_table1 <- CFM5_17_vars %>%
+  select(CFM_DD, DD_mental) %>%
+  mutate(
+    # Create no difficult and no mental health category
+    No_difficulty = case_when(
+      CFM_DD == "No difficulty" & 
+        DD_mental %in% c("Never", 
+                         "A few times a year", 
+                         "Monthly") ~ 1,
+      TRUE ~ 0
+    ),
+    # Create at least some difficulty/weekly category
+    at_least_some_diff_weekly = case_when(
+      CFM_DD %in% c("Some Difficulty",
+                    "A lot of Difficulty",
+                    "Cannot at all") |
+        DD_mental %in% c("Weekly",
+                         "Daily") ~ 1,
+      TRUE ~ 0
+    ),
+    # Create at least a lot of difficulty/daily
+    at_least_alot_diff_weekly = case_when(
+      CFM_DD %in% c("A lot of Difficulty",
+                    "Cannot at all") |
+        DD_mental %in% c("Weekly",
+                         "Daily") ~ 1,
+      TRUE ~ 0
+    ),
+    # Create cannot at all/daily
+    cannot_diff_daily = case_when(
+      CFM_DD %in% c("Cannot at all") |
+        DD_mental %in% c("Daily") ~ 1,
+      TRUE ~ 0
+  ) 
+    
+) %>%
+  select(-c(CFM_DD, DD_mental))
 
-# Print the table
-gender.table %>%
+
+summary(CFM2_4_table1)
+summary(CFM5_17_table1)
+```
+
+
+```{r creating the tables}
+# Convert the data into long format
+CFM2_4_table1_long <- CFM2_4_table1 %>%
+  pivot_longer(cols = c(No_difficulty, 
+                        at_least_some_diff, 
+                        at_least_alot_diff, 
+                        cannot_at_all_diff),
+               names_to = "Severity",
+               values_to = "Difficulty")
+
+CFM5_17_table1_long <- CFM5_17_table1 %>%
+  pivot_longer(cols = c(No_difficulty, 
+                        at_least_some_diff_weekly, 
+                        at_least_alot_diff_weekly, 
+                        cannot_diff_daily),
+               names_to = "Severity",
+               values_to = "Difficulty")
+
+# Obtain their means 
+CFM2_4_prop_se <- CFM2_4_table1_long %>%
+  group_by(Severity) %>%
+  summarise(Proportion = mean(Difficulty),
+            n = n(),
+            se = sqrt(Proportion * (1 - Proportion)/n))
+
+CFM5_17_prop_se <- CFM5_17_table1_long %>%
+  group_by(Severity) %>%
+  summarise(Proportion = mean(Difficulty),
+            n = n(),
+            se = sqrt(Proportion * (1 - Proportion)/n))
+
+# Cleaning the tables by turning values into percentages and rounding and creating 95% CI bounds
+CFM2_4_CI <- CFM2_4_prop_se %>%
+  mutate(Percentage = round(Proportion * 100,2),
+         SE = round(se * 100,2),
+         Lower = round(Percentage - 1.96 * SE,2),
+         Upper = round(Percentage + 1.96 * SE,2))
+
+CFM5_17_CI <- CFM5_17_prop_se %>%
+  mutate(Percentage = round(Proportion * 100,2),
+         SE = round(se * 100,2),
+         Lower = round(Percentage - 1.96 * SE,2),
+         Upper = round(Percentage + 1.96 * SE,2))
+
+# Ordering the rows
+CFM2_4_order_row <- c("No_difficulty", 
+                      "at_least_some_diff", 
+                      "at_least_alot_diff", 
+                      "cannot_at_all_diff")
+
+CFM5_17_order_row <- c("No_difficulty", 
+                      "at_least_some_diff_weekly", 
+                      "at_least_alot_diff_weekly", 
+                      "cannot_diff_daily")
+
+
+CFM2_4_CI_ordered <- CFM2_4_CI[match(CFM2_4_CI$Severity, CFM2_4_order_row), ]
+CFM5_17_CI_ordered <- CFM5_17_CI[match(CFM5_17_CI$Severity, CFM5_17_order_row), ]
+
+# Keep Variables of interest
+CFM2_4_CI_final <- CFM2_4_CI_ordered %>%
+  transmute(Severity,
+            Var = paste0(Percentage," (",Lower,", ",Upper,")"))
+
+CFM5_17_CI_final <- CFM5_17_CI_ordered %>%
+  transmute(Severity,
+            Var = paste0(Percentage," (",Lower,", ",Upper,")"))
+
+# Rename the variables
+names(CFM2_4_CI_final) <- c(" ", "% (95% CI)")
+names(CFM5_17_CI_final) <- c(" ", "% (95% CI)")
+
+# Print out the data frames
+CFM2_4_CI_final %>%
   kbl() %>%
   kable_paper(full_width = F)
 
-
-# What is the number of households visited?
-paste("The number of unique households visited is:",length(unique(data$HOH_ID)))
+CFM5_17_CI_final %>%
+  kbl() %>%
+  kable_paper(full_width = F)
 ```
+
+
+## Part 2: Predicting difficulty Model (CFM2_4) from DD children
+
+- This is going to be a generalized linear mixed effects model that is predicting reported difficulty (0,1) from age, domain, sex, domain * sex. 
+- Child_ID will have their own random intercept
+- HOH_ID will have their own random intercept
+- Results will be preliminary since we need to make sure the data is cleaned! (HOH_ID)
+- We will do model comparisons while increasing the complexity of the models
+- We decided to only include DD since there is a large imbalence in favor of 0's if non-DD are included
+- Thus, we can only generalized our findings to DD children!
+
+```{r running the GLMER model}
+# Keep variables going into the model
+CFM2_4_vars_DD <- CFM2_4_vars %>%
+  filter(CFM_DD != "No difficulty") %>%
+  select(-c(CFM_DD, glasses, hearing.aid, walking.equipment))
+
+# Convert the data into long format
+CFM2_4_vars2_DD_long <- CFM2_4_vars_DD %>%
+  pivot_longer(cols = c(CF3_Seeing:CF16_Controlling_Behavior),
+               names_to = "Domain",
+               values_to = "Reported_Difficulty")
+
+# Convert the outcome into 0's and 1's (at least some difficulty = 1)
+CFM2_4_vars2_DD_long$Reported_Difficulty <- ifelse(CFM2_4_vars2_DD_long$Reported_Difficulty == "No difficulty", 0, 1)
+
+# Check the difference in teh frequency of the outcome
+table(CFM2_4_vars2_DD_long$Reported_Difficulty)
+table(CFM2_4_vars_DD$Child_Gender)
+
+# Number of children
+length(unique(CFM2_4_vars2_DD_long$Child_ID))
+
+# Run the model
+CFM2_4_empty <- glmer(Reported_Difficulty ~ 1 + (1 | HOH_ID) + (1 | Child_ID), data = CFM2_4_vars2_DD_long, family = binomial) 
+
+# Since the variance of HOH_ID is zero, it will be removed from the model
+CFM2_4_empty2 <- glmer(Reported_Difficulty ~ 1 + (1 | Child_ID), data = CFM2_4_vars2_DD_long, family = binomial) 
+
+# Obtain the ICC
+icc(CFM2_4_empty2)
+
+# Create a model with a covariate
+CFM2_4_covariate <- glmer(Reported_Difficulty ~ Child_age + (1 | Child_ID), data = CFM2_4_vars2_DD_long, family = binomial) 
+
+# Create a model with another covariate
+CFM2_4_covariate2 <- glmer(Reported_Difficulty ~ Child_age + Child_Gender + (1 | Child_ID), data = CFM2_4_vars2_DD_long, family = binomial) 
+
+# Create a model with the predictor of interest (Domain)
+CFM2_4_main <- glmer(Reported_Difficulty ~ Child_age + Child_Gender + Domain + (1 | Child_ID), data = CFM2_4_vars2_DD_long, family = binomial) 
+
+# Create a complex model with the interaction
+CFM2_4_complex <- glmer(Reported_Difficulty ~ Child_age + Child_Gender * Domain + (1 | Child_ID), data = CFM2_4_vars2_DD_long, family = binomial) 
+
+# Do model comparison
+anova(CFM2_4_empty2,
+      CFM2_4_covariate,
+      CFM2_4_main,
+      CFM2_4_complex)
+
+# Obtained the fixed effects using type 3 SS
+Anova(CFM2_4_main, type = "III")
+
+# Due to the non-significan interaction, we will use effect coding on Domain
+CFM2_4_vars2_DD_long$Domain <- factor(CFM2_4_vars2_DD_long$Domain)
+contrasts(CFM2_4_vars2_DD_long$Domain) <- contr.sum(length(unique(CFM2_4_vars2_DD_long$Domain)))
+
+# Fit the model with the effect-coded 'Domain' variable
+CFM2_4_main2 <- glmer(Reported_Difficulty ~ Child_age + Child_Gender + Domain + (1 | Child_ID), 
+                     data = CFM2_4_vars2_DD_long, family = binomial)
+
+# Check the summary of the model
+summary(CFM2_4_main2, cor = F)
+
+# Spit the levels so we know what Domain1-8 mean (the intercept = CF10_Walking)
+levels(CFM2_4_vars2_DD_long$Domain)
+
+# Calcuating the means of reported difficulty
+CFM2_4_Domain <- CFM2_4_vars2_DD_long %>%
+  group_by(Domain) %>%
+  summarise(Percentage = mean(Reported_Difficulty)*100) 
+
+CFM2_4_Domain_order <- as.character(unlist(select(arrange(CFM2_4_Domain, desc(Percentage)), Domain)))
+
+# Creating the graphs
+CFM2_4_Domain %>%
+  mutate(Domain = factor(Domain,
+                         levels = CFM2_4_Domain_order)) %>%
+  ggplot(aes(x = Domain, y = Percentage)) +
+  geom_bar(stat = "identity",
+           fill = "white",
+           color = "black") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,58)) +
+  geom_text(aes(label = paste(format(round(Percentage,1),
+                                     nsmall = 1),
+                              "%", sep = "")),
+                nudge_y = 3.7, size = 4) +
+  coord_flip() + 
+  theme_classic() +
+  labs(title = paste0("Percentage of at least some difficulty\nby functional domain CFM 2-4 (n=", nrow(CFM2_4_vars_DD),")"),
+       x = "Functional Domain",
+       y = "Percentage (%)") +
+  theme(plot.title = element_text(size = 20,
+                                    hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 14),
+        plot.caption = element_text(size = 12,
+                                    hjust = 0))
+```
+
+
+### Interpretation of the results from above
+
+- We used model comparison to test the following models agains each other
+    - Empty model
+    - Predictor: Age
+    - Predictors: Age and Sex
+    - Predictors: Age, Sex, Domain
+    - Predictors: Age, Sex, Domain, Sex * Domain
+- The mode with main effects and no interactions was the best fit
+- Using type III SS, there was a significant fixed effect of Domain (χ2(8)= 39.51, p <.001) and no fixed effects of age (χ2(1)= 1.90, p = .17) nor gender (χ2(1)= 0.03, p = .86).
+- To investigate the log odd differences in the levels of Domain, effect coding was used. This is a way of formatting the 'means' by the levels, which are then compared to the average mean of all the levels- that functions as the reference.
+- According to ChatGPT, the intercept represents the log-odds of CF10_Walking, which is significant, here is a list of all significant domains in descending order:
+    - CF11_Fine_Motor
+    - CF10_Walking
+    - CF12_Understanding
+    - CF14_Learning
+    - CF3_Seeing
+
+... Either read about effect coding, review stats notes, or go back to pairwise comparison of estimated marginal means!
 
 
 ### Create new variables for at least thresholds (CFM2_4)
@@ -185,6 +450,8 @@ CFM2_4.final <- CFM2_4 %>%
   select(HOH_ID, Child_ID, Child_Gender, Child_age, CFM_DD, atleast.some, atleast.alot, cannot.at.all)
 
 ```
+
+
 
 ### Create new variables for at least thresholds (CFM5_17)
 
