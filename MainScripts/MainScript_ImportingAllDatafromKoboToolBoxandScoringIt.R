@@ -52,7 +52,8 @@ df.uid <- data.frame(
   Triangles_LettrDig.iud = "aKBKpKnKssVquL3yxWqx8G",
   ZAT.iud = "aSoQexoZ8NAeBqTAm9sqQt",
   
-  ASEBA_CBC.iud = "aKuaJqgcuCv5GAbmXdAbt6",
+  ASEBA_CBC_3_6.iud = "aKuaJqgcuCv5GAbmXdAbt6",
+  ASEBA_CBC_6_18.iud ="aE9p84FiHZTpA5CKv5zc64",
   BRIEF2_Parent.iud = "a8crqFHGueNo9WDa6D8kPa",
   HomeEnv.iud = "aMsdG3VCzxGbCutgMtkLjq",
   PSC.iud = "a4t7cAdJvHnmagPQArZ9yX",
@@ -70,7 +71,7 @@ df.uid.t <- data.frame(t(df.uid))
 names(df.uid.t) <- "uid"
 
 # Add Child  Parent Assessment Label
-df.uid.t$label <- c(rep("Children", 6), rep("Adults", 6), rep("Screener",2))
+df.uid.t$label <- c(rep("Children", 6), rep("Adults", 7), rep("Screener",2))
 
 # Add Partial Pathway 
 df.uid.t <- df.uid.t %>%
