@@ -45,7 +45,7 @@ Items_Raw %>% filter(!complete.cases(.))
 Items_Raw$CBC3_6_44 <- ifelse(Items_Raw$CBC3_6_44 == "2g", "2", Items_Raw$CBC3_6_44)
 Items_Raw$CBC3_6_98 <- ifelse(Items_Raw$CBC3_6_98 == "0_1", "2", Items_Raw$CBC3_6_98)
 
-# Data cleaning: Converting everything into 
+# Data cleaning: Converting everything into numeric
 Items_Raw2 <- sapply(Items_Raw, function(x) as.numeric(x)) %>% cbind() %>% data.frame()
 
 ###
@@ -108,13 +108,19 @@ for(ii in 1:length(scoring_list)) {
 # Cbind them into a dataset
 scored_df <- data.frame(do.call(cbind, scored_list))
 
-# Add Internal and Extrnalize Scoring
+# Add Internal, Externalize and total Scoring
 scored_df$x14 <- rowSums(scored_df[,1:4])
 scored_df$x15 <- rowSums(scored_df[,6:7])
 scored_df$x16 <- rowSums(scored_df[,1:8])
 
 # Rename the dataframe
 names(scored_df) <- c(names(scoring_list), "Internalizing", "Externalizing", "Total Prob")
+
+# Reorder variables to reduce confusion
+scored_df <- select(scored_df, 
+                    emotionally_reactive:other_problems,
+                    Internalizing:`Total Prob`,
+                    depressive_problems:opositional_defiant_problems)
 
 # Recreate the final dataset
 CBC3_6_2 <- tibble(cbind(Front, Items_Raw, scored_df))

@@ -136,7 +136,10 @@ source("Scoring/PediatricSymptomChecklist.Scoring.R")
 source("Scoring/PhysicalData.Scoring.R")
 source("Scoring/BRIEF2SelfReport.Scoring.R")
 source("Scoring/BRIEF2ParentForm.Scoring.R")
+source("Scoring/ASEBA_CBC_3_6.Scoring.R")
+source("Scoring/ASEBA_CBC_6_18.Scoring.R")
 source("Scoring/Demographics_Scoring.R")
+
 
 
 # Emerged Problems
