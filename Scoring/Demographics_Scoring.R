@@ -6,17 +6,27 @@ library(readxl)
 library(openxlsx)
 library(lubridate)
 
-
 # Read in the file
 IDTracker <- read_excel(paste0(DataLocation,"Final_DS/Screener/Matched_Siblings/Final_ID_Tracker.xlsx"))
-
-# Keep the variables of interest
-IDTracker2 <- select(IDTracker, Child_ID = ID, Sex = Child_Gender, Epilepsy, DOB = Child_Date_of_Birth, Screened_Age = Child_age)
 
 # Load forward three tasks
 Atlantis_Raw <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/Atlantis_Raw.xlsx"))
 ZAT_Raw <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/ZAT_Raw.xlsx")) 
 RecepVocab_Raw <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Children/RecepVocab_Raw.xlsx"))
+
+# Create a save pathway
+save.pathway <- paste(DataLocation,"FINAL_DS/Demographics/Demographics.xlsx", sep="")
+
+# Create a save pathway for Notes
+save.pathway.notes <-  paste(DataLocation,"REPORTS/Individual/Demo.csv", sep="")
+
+
+###########                                   #############
+########### THE REST OF THE CODE IS AUTOMATIC #############
+###########  
+
+# Keep the variables of interest
+IDTracker2 <- select(IDTracker, Child_ID = ID, Sex = Child_Gender, Epilepsy, DOB = Child_Date_of_Birth, Screened_Age = Child_age)
 
 # Keep only the IDs and the date of evaluation
 Atlantis_Raw2 <- select(Atlantis_Raw, Child_ID = Child_s_Study_ID, DOE1 = Date_of_Evaluation)
@@ -65,9 +75,13 @@ DOE2 <- select(DOE, Child_ID, Age, AgeRange)
 IDTracker3 <- IDTracker2 %>%
   left_join(DOE2, by = "Child_ID")
 
-# Create a save pathway
-save.pathway <- paste(DataLocation,"FINAL_DS/Demographics/",
-                      "Demographics.xlsx", sep="")
+# Check the IDs for errors
+source("Scoring/scoring_functions/IDError_FUNCTION.R")
+Demo_Notes <-check_id_errors("Demographics",
+                             IDTracker3$Child_ID)
+
+# Save the Notes as a CSV
+write_csv(x = Demo_Notes, save.pathway.notes)
 
 # Save the scored data
 write.xlsx(x= IDTracker3, file = save.pathway)
