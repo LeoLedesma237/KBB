@@ -1,3 +1,9 @@
+# Instructions:
+# Run the first 23 lines of code
+# After data have been imported and score, run the first 16 lines of code
+# Run the remaining lines of code, manually score, then rerun the remaining again 
+
+
 # Set the location for your working directory (Where your scripts are saved)
 WorkingDirectory <- "C:/Users/lledesma.TIMES/Documents/GitHub/KBB/"
 
@@ -10,18 +16,17 @@ FinalData_PW <- paste0(DataLocation,"FINAL_DS/Screener/")
 # Set the pathway to the final matched sibling data
 MatchedSibling_PW <- paste0(DataLocation,"FINAL_DS/Screener/Matched_Siblings/")
 
+# Set the working directory
+setwd(WorkingDirectory)
+
+# Run the main script that uses API to download the data and score it
+source("MainScripts/MainScript_ImportingAllDatafromKoboToolBoxandScoringIt.R")
 
 #########################                          ############################
 ######################                                 ########################
 ###################### REST OF THE SCRIPT IS AUTOMATIC ########################
 ######################                                 ########################
 ##########################                        #############################
-
-# Set the working directory
-setwd(WorkingDirectory)
-
-# Run the main script that uses API to download the data and score it
-source("MainScripts/MainScript_ImportingAllDatafromKoboToolBoxandScoringIt.R")
 
 
 # Remove all global environment objects to declutter
