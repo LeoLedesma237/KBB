@@ -1,3 +1,5 @@
+function output = CleaningRawEEG(Data_Location, Condition, SamplingRate)
+
 % 1. Set the pathway to the EEG data with markers that are synchronized to
 % the EEG (originally called folder)
 EEG_pathway = append(Data_Location, 'RAW_DATA\'); 
@@ -146,7 +148,7 @@ parfor ii = 1:N
         EEG = pop_reref( EEG, [10 21] );
     
         % Keep Sample at 500 Hz
-        EEG = pop_resample( EEG, 500);
+        EEG = pop_resample( EEG, SamplingRate);
     
         % Save the EEG rank of the data
         rank2(ii) = rank(EEG.data);
@@ -346,3 +348,4 @@ SaveFileName = append(Condition_folders{Condition},'_Report.xlsx');
 SaveFileName_Full = append(CSV_savePathway, SaveFileName);
 writetable(combinedData, SaveFileName_Full);
 
+end

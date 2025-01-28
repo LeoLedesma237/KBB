@@ -19,7 +19,7 @@ numCores = feature('numcores');
 disp(['Number of available cores: ', num2str(numCores)]);
 
 % Start the recruting these cores
-parpool(numCores); % Start a pool with 8 workers
+parpool(numCores); % Start a pool with 12 workers
 
 
 %%%%% Cleaning the EEG
