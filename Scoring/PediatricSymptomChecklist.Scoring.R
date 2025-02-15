@@ -56,10 +56,10 @@ names(All_Items) <- c(paste0("PS_",1:length(Items)), names(All_Items)[length(Ite
 source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
 
 # Get the score for the dataset
-Items <- scoring_function1(Items, 40)
+Items <- scoring_function1(Items, 40, "PSC")
 
 # Introduce the scored metrics into the dataset
-PSC <- cbind(Front, All_Items, select(Items, StopRule_Num:Performance))
+PSC <- cbind(Front, All_Items, select(Items, PSC_StopRule_Num:PSC_Performance))
 
 # Save the scored data
 write.xlsx(x= PSC, file = save.pathway_PSC)

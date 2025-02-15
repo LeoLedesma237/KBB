@@ -66,10 +66,10 @@ names(All_Items) <- sapply(All_Items_Var1, function(x)
 source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
 
 # Score the Pattern Reasoning Items
-scoredItems <- scoring_function1(Items, 4)
+scoredItems <- scoring_function1(Items, 4, "PR")
 
 # Introduce them into the dataset
-PatternReasoning <- cbind(Front, All_Items, select(scoredItems,StopRule_Num:Performance))
+PatternReasoning <- cbind(Front, All_Items, select(scoredItems,PR_StopRule_Num:PR_Performance))
 
 
 # Save the scored data

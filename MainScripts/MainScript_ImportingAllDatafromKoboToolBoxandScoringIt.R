@@ -130,7 +130,7 @@ source("Scoring/CFM2_4.Scoring.R")
 source("Scoring/CFM5_17.Scoring.R")
 source("Scoring/CFM.Before.Matching.R")
 source("Scoring/PatternReasoning.Scoring.R")
-source("Scoring/TrianglesAndLetterDigitSpan.Scoring.R")
+source("Scoring/TrianglesAndLetterDigitSpan.Scoring.R") # Needs to get fixed
 source("Scoring/ReceptiveVocabulary.Scoring.R")
 source("Scoring/PediatricSymptomChecklist.Scoring.R")
 source("Scoring/PhysicalData.Scoring.R")
@@ -139,7 +139,7 @@ source("Scoring/BRIEF2ParentForm.Scoring.R")
 source("Scoring/ASEBA_CBC_3_6.Scoring.R")
 source("Scoring/ASEBA_CBC_6_18.Scoring.R")
 source("Scoring/Demographics_Scoring.R")
-
+source("MainScripts/MainScript_CreatingMasterSheetofScoredAssessments.R")
 
 
 # Emerged Problems

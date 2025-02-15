@@ -38,14 +38,11 @@ Items_Raw <- CBC3_6 %>%
 # Rename the Raw Items
 names(Items_Raw) <- paste0("CBC3_6_",1:length(Items_Raw))
 
-# There are 5 rows with NA's but its for Q100, which is okay!
-Items_Raw %>% filter(!complete.cases(.))
-
 # Data cleaning: Changing values to correct numbers!
 Items_Raw$CBC3_6_44 <- ifelse(Items_Raw$CBC3_6_44 == "2g", "2", Items_Raw$CBC3_6_44)
 Items_Raw$CBC3_6_98 <- ifelse(Items_Raw$CBC3_6_98 == "0_1", "2", Items_Raw$CBC3_6_98)
 
-# Data cleaning: Converting everything into numeric
+# Data cleaning: Converting everything into numeric [Will cause NA Warning cause Q100]
 Items_Raw2 <- sapply(Items_Raw, function(x) as.numeric(x)) %>% cbind() %>% data.frame()
 
 ###
@@ -78,19 +75,19 @@ opp_def_prob_scale <- c(15, 20, 44, 81, 85, 88)
 
 
 # Create a list that will be used to score the columns of the dataset
-scoring_list <- list(emotionally_reactive = emo_reac, 
-                     anxious_depressed = anx_depr,
-                     somatic_complaints = som_comp,
-                     withdrawn = withdr,
-                     sleep_problems = sleep_prob,
-                     attention_problems = atten_prob,
-                     aggressive_behaviors = aggr_beh,
-                     other_problems = othr_prob,
-                     depressive_problems = depress_scale,
-                     anxiety_problems = anxiet_scale,
-                     autism_spectrum_problems = autism_scale,
-                     attention_deficit_hyperactivity_problems = ADHD_scale,
-                     opositional_defiant_problems = opp_def_prob_scale)
+scoring_list <- list(CBC3_6_emotionally_reactive = emo_reac, 
+                     CBC3_6_anxious_depressed = anx_depr,
+                     CBC3_6_somatic_complaints = som_comp,
+                     CBC3_6_withdrawn = withdr,
+                     CBC3_6_sleep_problems = sleep_prob,
+                     CBC3_6_attention_problems = atten_prob,
+                     CBC3_6_aggressive_behaviors = aggr_beh,
+                     CBC3_6_other_problems = othr_prob,
+                     CBC3_6_depressive_problems = depress_scale,
+                     CBC3_6_anxiety_problems = anxiet_scale,
+                     CBC3_6_autism_spectrum_problems = autism_scale,
+                     CBC3_6_attention_deficit_hyperactivity_problems = ADHD_scale,
+                     CBC3_6_opositional_defiant_problems = opp_def_prob_scale)
 
 ###
 ###### Scoring the data
@@ -114,13 +111,16 @@ scored_df$x15 <- rowSums(scored_df[,6:7])
 scored_df$x16 <- rowSums(scored_df[,1:8])
 
 # Rename the dataframe
-names(scored_df) <- c(names(scoring_list), "Internalizing", "Externalizing", "Total Prob")
+names(scored_df) <- c(names(scoring_list), "CBC3_6_Internalizing", "CBC3_6_Externalizing", "CBC3_6_Total_Prob")
 
 # Reorder variables to reduce confusion
 scored_df <- select(scored_df, 
-                    emotionally_reactive:other_problems,
-                    Internalizing:`Total Prob`,
-                    depressive_problems:opositional_defiant_problems)
+                    CBC3_6_emotionally_reactive:CBC3_6_other_problems,
+                    CBC3_6_Internalizing:CBC3_6_Total_Prob,
+                    CBC3_6_depressive_problems:CBC3_6_opositional_defiant_problems)
+
+## introduce an NA measure
+Items_Raw$CBC3_6_NA_Num <- rowSums(is.na(Items_Raw))
 
 # Recreate the final dataset
 CBC3_6_2 <- tibble(cbind(Front, Items_Raw, scored_df))

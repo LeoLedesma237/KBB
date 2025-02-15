@@ -51,6 +51,15 @@ CFM5_17 <- read.csv("CFM5_17_clean_CFM_manuscript.csv")
 
 ```
 
+
+### When data collection ocurred?
+
+```{r data time range}
+sort(CFM2_4$Date_of_Evaluation)[c(1,nrow(CFM2_4))]
+sort(CFM5_17$Date_of_Evaluation)[c(1,nrow(CFM5_17))]
+
+```
+
 ### Preparing data
 
 - We will be keep variables of interest which include:
@@ -143,8 +152,8 @@ summary(CFM2_4_vars$Child_age)
 table(CFM2_4_vars$Child_Gender)
 
 ## For CFM5_17
-# Remove any children outside the age range 5_18
-correct_CFM5_17 <- CFM5_17_vars_tot[CFM5_17_vars_tot$Child_age >= 5 & CFM5_17_vars_tot$Child_age < 17,]
+# Remove any children outside the age range 5_17
+correct_CFM5_17 <- CFM5_17_vars_tot[CFM5_17_vars_tot$Child_age >= 5 & CFM5_17_vars_tot$Child_age < 18,]
 
 paste0(nrow(CFM5_17_vars_tot)," total observations for CFM5-17")
 paste0(nrow(correct_CFM5_17), " observations between 5-17, these will be analyzed")
@@ -155,6 +164,8 @@ length(unique(CFM5_17_vars$Child_ID))
 summary(CFM5_17_vars$Child_age)
 table(CFM5_17_vars$Child_Gender)
 ```
+
+
 
 ## Part 1: Prevalence of DD by different threshold for both screeners
 
@@ -371,6 +382,87 @@ CFM_binded %>%
 
 ```
 
+### There are different numbers of domain per CFM
+
+CFM2-4 (8 Domains)
+
+- Seeing
+- Hearing
+- Mobility
+- Fine Motor
+- Communicating/Comprehension (understanding you/understanding them)
+- Learning
+- Playing
+- Controlling Behavior
+
+CFM5-17 (13 Domains)
+- Seeing
+- Hearing
+- Mobility (Walking 500/ Walking 100)
+- Self Care
+- Communication (understood inside/understood outside)
+- Learning
+- Remembering
+- Attention and Concentration
+- Coping with Change
+- Controlling Anger
+- Relationships
+- Anxiety
+- Depression
+
+```{r identifying the number of kids with more than one domain dificulty}
+# Select vars that represent domains
+CFM2_4_dom_num <- CFM2_4_vars %>%
+  select(CF3_Seeing:CF16_Controlling_Behavior)
+
+# Score domains that each have one item "No difficulty"
+CFM2_4_dom_num$dom_num1  <- rowSums(CFM2_4_dom_num[,c(1:4,7:9)] != "No difficulty")
+CFM2_4_dom_num$dom_num2  <- rowSums(CFM2_4_dom_num[,c(5,6)] != "No difficulty")
+CFM2_4_dom_num$dom_num2 <- ifelse(CFM2_4_dom_num$dom_num2 >= 1, 1, 0)
+
+# Obtain a final score of number of domains with difficulty
+CFM2_4_dom_num <- CFM2_4_dom_num %>%
+  mutate(dom_num_final = dom_num1 + dom_num2)
+
+
+# Test
+CFM2_4_dom_num %>%
+  filter(dom_num_final == 0) %>%
+  sapply(function(x) table(x))
+
+
+# Count the number of times per row "No difficulty|"
+CFM5_17_dom_num <- CFM5_17_vars %>%
+  select(CF3_Seeing:CF24_Depression)
+
+
+CFM5_17_dom_num$dom_num1 <- rowSums(!CFM5_17_dom_num[,1:2] == "No difficulty")
+CFM5_17_dom_num$dom_num2 <- rowSums(!CFM5_17_dom_num[,3:4] == "No difficulty")
+CFM5_17_dom_num$dom_num3 <- rowSums(!CFM5_17_dom_num[,6:7] == "No difficulty")
+CFM5_17_dom_num$dom_num4 <- rowSums(!CFM5_17_dom_num[,c(5,8:13)] == "No difficulty")
+CFM5_17_dom_num$dom_num5 <- rowSums(CFM5_17_dom_num[, 14:15] == "Daily" | CFM5_17_dom_num[, 14:15] == "Weekly")
+
+# These items represent one domain so any value greater than 1 needs to be turned into 1
+CFM5_17_dom_num$dom_num2 <- ifelse(CFM5_17_dom_num$dom_num2 >= 1, 1, 0) # Walking100/Walking500
+CFM5_17_dom_num$dom_num3  <- ifelse(CFM5_17_dom_num$dom_num3  >= 1, 1, 0) #Inside/Outside
+
+CFM5_17_dom_num <- CFM5_17_dom_num %>%
+  mutate(dom_num_final = dom_num1 + dom_num2 + dom_num3 + dom_num4 + dom_num5)
+
+
+# Test
+CFM5_17_dom_num %>%
+  filter(dom_num_final == 0) %>%
+  sapply(function(x) table(x))
+
+
+# Report the number of children with reported difficulties
+table(CFM2_4_dom_num$dom_num_final)
+table(CFM5_17_dom_num$dom_num_final)
+
+round(prop.table(table(CFM2_4_dom_num$dom_num_final)),3)*100
+round(prop.table(table(CFM5_17_dom_num$dom_num_final)),3)*100
+```
 
 ```{r converting CFM2_4 into long format}
 # Keep variables going into the model
@@ -840,7 +932,7 @@ tapply(CFM5_17_vars2_DD_long$Reported_Difficulty,
 (emm1 <- emmeans(CFM5_17_complex2, ~ Domain | Child_Gender))
 
 # Contrasts using effect coding (default in contrast() function)
-(cntr1 <- contrast(emm1, adjust = "sidak"))
+(cntr1 <- contrast(emm1, adjust = "fdr"))
 cntr1_df <- data.frame(summary(cntr1, infer = TRUE)) # change to df and add 95% CI
 
 # Output these values into datasets and calculate the odds ratio
@@ -1046,6 +1138,52 @@ preds_df %>%
   geom_line(size = .75) +
   #geom_abline(slope= plogis(gas), intercept= 25) +
   facet_wrap(~Domain) +
+  labs(
+    x = "Child Age",
+    y = "%"
+  ) +
+  scale_color_manual(values = c("#E74C3C","#3498DB")) + 
+  theme_sjplot() +
+  theme(legend.position = "none") 
+
+# Create a slope line that is more straight!
+# Obtain some y-intercepts
+Intercepts_list <- list()
+Age_check <- list()
+
+for(ii in 1:15) {
+  
+  Intercepts_list[[ii]] <- preds_df$emmean[3*ii-2]
+  Age_check[[ii]] <- preds_df$Child_age[3*ii-2]
+}
+
+# Introduce these as y-intercepts
+emt1_df$intercept <- unlist(Intercepts_list)
+
+# Minor data cleaning
+emt2_df <- select(emt1_df, slope=Child_age.trend, intercept, domain = emt1_df.Domain, Sig = Sig)
+
+
+lines_df <- data.frame(
+  slope = c(-0.0704, -1, 2, 0.5),
+  intercept = c(-2.420584, 5, -2, 3)
+)
+
+# Plot the multiple lines
+ggplot(data.frame(x = c(0, 10)), aes(x = x)) +
+  geom_abline(data = lines_df[1,], aes(slope = slope, intercept = intercept, color = factor(slope)), size = 1) +
+  labs(title = "Multiple Lines with Different Slopes",
+       color = "Slope Value") +
+  xlim(0, 10) + ylim(-10, 20)
+
+emt2_df %>%
+  mutate(x = 1:15) %>%
+  ggplot(aes(x = x, color = Sig)) +
+  geom_abline(data = emt2_df, aes(slope = slope, intercept = intercept, color = factor(slope)), size = 1) +
+  labs(title = "Multiple Lines with Different Slopes",
+       color = "Slope Value") +
+  xlim(5, 18) + ylim(-7, 1) +
+  facet_wrap(~domain) +
   labs(
     x = "Child Age",
     y = "%"

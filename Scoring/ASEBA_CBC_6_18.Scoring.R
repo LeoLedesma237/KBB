@@ -73,15 +73,15 @@ agg_beh <- c(3, 16, 19, 20, 21, 22, 23, 37, 57, 68, 86, 87, 88, 89, 94, 95, 97, 
 oth_pro <- c(6, 7, 15, 24, 44, 53, 55, 74, 77, 93, 98, 107, 108, 109, 110, 113)
 
 # Create a list that will be used to score the columns of the dataset
-scoring_list <- list(anxious_depressed = anx_dep,
-                     withdrawn_depressed = wit_dep,
-                     somatic_complaints = som_com,
-                     social_problems = soc_pro,
-                     thought_problems = tho_pro,
-                     attention_problems = att_pro,
-                     ruleBreaking_behavior = rul_beh,
-                     aggressive_behavior = agg_beh,
-                     other_problems = oth_pro)
+scoring_list <- list(CBC6_18_anxious_depressed = anx_dep,
+                     CBC6_18_withdrawn_depressed = wit_dep,
+                     CBC6_18_somatic_complaints = som_com,
+                     CBC6_18_social_problems = soc_pro,
+                     CBC6_18_thought_problems = tho_pro,
+                     CBC6_18_attention_problems = att_pro,
+                     CBC6_18_ruleBreaking_behavior = rul_beh,
+                     CBC6_18_aggressive_behavior = agg_beh,
+                     CBC6_18_other_problems = oth_pro)
 
 ###
 ###### Scoring the data
@@ -105,7 +105,12 @@ scored_df$X11 <- rowSums(scored_df[,7:8])
 scored_df$X12 <- rowSums(scored_df[,1:9])
 
 # Rename the dataframe
-names(scored_df) <- c(names(scoring_list), "Internalizing", "Externalizing", "Total Prob")
+names(scored_df) <- c(names(scoring_list), "CBC6_18_Internalizing", "CBC6_18_Externalizing", "CBC6_18_Total_Prob")
+
+
+## introduce an NA measure (Not including Q63 and 120)
+Items_Raw$CBC6_18_NA_Num <- rowSums(is.na(cbind(select(Items_Raw, CBC6_18_1:CBC6_18_62),
+                                        select(Items_Raw, CBC6_18_64:CBC6_18_119))))
 
 # Recreate the final dataset
 CBC6_18_2 <- tibble(cbind(Front, Items_Raw, scored_df))

@@ -57,7 +57,7 @@ Items2 <- scoring_function0(Items, answer_key)
 names(Items2) <- paste0("RV_",1:length(Items2))
 
 # Get the score for the dataset
-Items3 <- scoring_function1(Items2, 30)
+Items3 <- scoring_function1(Items2, 30, "RV")
 
 # Save the raw and scored data together
 RecepVocab <- cbind(Front, Items, Items3)

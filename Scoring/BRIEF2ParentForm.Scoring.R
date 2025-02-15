@@ -103,7 +103,7 @@ AllConstructsScored <- AllConstructsScored %>%
          GEC = BRI + ERI + CRI)
 
 # Count the number of NAs, items given, and total number of items
-BRIEF2PF2$NA.Num <- rowSums(is.na(Items))
+BRIEF2PF2$NA_Num <- rowSums(is.na(Items))
 
 
 # Now introduce all of these scored measures into the final dataset

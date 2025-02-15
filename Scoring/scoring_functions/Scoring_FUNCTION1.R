@@ -6,7 +6,7 @@
 # - The number of items given for each row
 # - A performance measure value
 
-scoring_function1 <- function(items, stopRuleNum) {
+scoring_function1 <- function(items, stopRuleNum, name) {
   
   # Extract current Items (these are df)
   Items <- items
@@ -116,6 +116,9 @@ scoring_function1 <- function(items, stopRuleNum) {
   items$SR_Viola <- StopRuleViolated
   items$NA_num <- NAsNum
   items$Performance <- Performance
+  
+  # Change the name of the QS variables
+  names(items)[(length(items)-7):length(items)] <- paste0(name,"_",names(items)[(length(items)-7):length(items)])
   
   # return the completed dataframe
   return(items)
