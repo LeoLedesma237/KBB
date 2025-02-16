@@ -201,6 +201,15 @@ Incorrect.Screeners <- Incorrect.Screeners %>% arrange(Date_of_Evaluation)
 Excluded.Children <- Excluded.Children %>% arrange(Date_of_Evaluation)
 HOH.No.Matches.unnested <- HOH.No.Matches.unnested %>% arrange(Date_of_Evaluation)
 
+# Load in the EEG_Eligibility Function
+source("Scoring/scoring_functions/EEG_Eligibility_FUNCTION.R")
+
+# Run the EEG Eligibility function on all screener datasets
+Incorrect.Screeners<- dryEEG_function(Incorrect.Screeners)
+Excluded.Children <- dryEEG_function(Excluded.Children)
+HOH.No.Matches.unnested <- dryEEG_function(HOH.No.Matches.unnested)
+HOH.Potential.Matches.unnested <- dryEEG_function(HOH.Potential.Matches.unnested)
+Binded.data <- dryEEG_function(Binded.data)
 
 # Save level one datasets
 write.xlsx(list(data = Incorrect.Screeners), file =  paste0(save.pathwayScreener,"1) Incorrect Screeners (level 1).xlsx"))

@@ -128,9 +128,9 @@ Sys.sleep(2)
 # Score the data
 source("Scoring/CFM2_4.Scoring.R")
 source("Scoring/CFM5_17.Scoring.R")
-source("Scoring/CFM.Before.Matching.R")
+source("Scoring/CFM.Before.Matching.EEG.Eligibility.R")
 source("Scoring/PatternReasoning.Scoring.R")
-source("Scoring/TrianglesAndLetterDigitSpan.Scoring.R") # Needs to get fixed
+source("Scoring/TrianglesAndLetterDigitSpan.Scoring.R")
 source("Scoring/ReceptiveVocabulary.Scoring.R")
 source("Scoring/PediatricSymptomChecklist.Scoring.R")
 source("Scoring/PhysicalData.Scoring.R")

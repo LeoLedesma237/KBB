@@ -1,6 +1,6 @@
 # Instructions:
 # Run the first 23 lines of code
-# After data have been imported and score, run the first 16 lines of code
+# After data have been imported and scored, run the first 16 lines of code
 # Run the remaining lines of code, manually score, then rerun the remaining again 
 
 
@@ -63,7 +63,8 @@ HOH.Potential.Matches.unnested.final <- HOH.Potential.Matches.unnested %>%
 
 # Save the partialled out HOH Potential Matches
 HOH.Potential.Matches.unnested.final.shorted <- HOH.Potential.Matches.unnested.final %>%
-  select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary) %>%
+  select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary,
+         EEG_Group:EEG_Exc_Rea) %>%
   arrange(HOH_ID)
 
 # Minor data cleaning (reading data creates a time for date variables)

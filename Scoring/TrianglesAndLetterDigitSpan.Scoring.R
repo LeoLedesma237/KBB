@@ -62,11 +62,10 @@ names(NB.Items) <- 1:16
 names(LF.Items) <- 1:16 
 names(LB.Items) <- 1:16
 
-new.names <- c("TR_", "NF_", "NB_", "LF_", "LB_")
-
-# Create a list for all of the Items and their respective stop rules
+# Create a list for all of the Items and their respective stop rules and names
 Items.List <- list(TR.Items, NF.Items, NB.Items, LF.Items, LB.Items)
 StopRules <- c(5,4,4,4,4)
+new.names <- c("TR", "NF", "NB", "LF", "LB")
 
 
 # Call the function to score Lettter and Digit
@@ -77,11 +76,14 @@ scoredItems_list <- list()
 
 for(ii in 1:length(Items.List)) {
  
+  # Save the current Item list
+  current_ItemList <- Items.List[[ii]]
+  
+  # Rename items before they are scored 
+  names(current_ItemList) <- paste0(new.names[ii],"_", names(current_ItemList))
+  
   # Score the Letter and Digit Items
-  scoredItems<- scoring_function1(Items.List[[ii]], StopRules[ii])
-
-  # Rename the scored items 
-  names(scoredItems) <- paste0(new.names[ii], names(scoredItems))
+  scoredItems<- scoring_function1(current_ItemList, StopRules[ii], new.names[ii])
   
   # Save these scored and cleaned datasets
   scoredItems_list[[ii]] <- scoredItems

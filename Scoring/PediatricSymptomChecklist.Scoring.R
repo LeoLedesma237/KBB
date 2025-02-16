@@ -49,8 +49,8 @@ All_Items <- PSC %>%
 Items <- data.frame(sapply(Items, function(x) as.numeric(x)))
 
 # Rename Items
-names(Items) <- paste0("PS_",1:length(Items))
-names(All_Items) <- c(paste0("PS_",1:length(Items)), names(All_Items)[length(Items)+1:length(All_Items)])
+names(Items) <- paste0("PSC_",1:length(Items))
+names(All_Items) <- c(paste0("PSC_",1:length(Items)), names(All_Items)[length(Items)+1:length(All_Items)])
 
 # Call the function to score each item in Receptive Vocabulary
 source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
