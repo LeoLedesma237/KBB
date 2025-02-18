@@ -23,13 +23,13 @@ parpool(numCores); % Start a pool with 8 workers
 
 
 %%%%% Cleaning the EEG
-CleaningRawEEG(Data_Location, 1, 500)
+CleaningRawEEG2(Data_Location, 1, 500)
 
-CleaningRawEEG(Data_Location, 2, 500)
+CleaningRawEEG2(Data_Location, 2, 500)
 
-CleaningRawEEG(Data_Location, 3, 250)
+CleaningRawEEG2(Data_Location, 3, 250)
 
-CleaningRawEEG(Data_Location, 4, 250)
+CleaningRawEEG2(Data_Location, 4, 250)
 
 
 

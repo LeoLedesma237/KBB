@@ -1,4 +1,4 @@
-function output = CleaningRawEEG(Data_Location, Condition, SamplingRate)
+function output = CleaningRawERP(Data_Location, Condition, SamplingRate)
 
 % 1. Set the pathway to the EEG data with markers that are synchronized to
 % the EEG (originally called folder)
@@ -23,8 +23,8 @@ CSV_savePathway = append(Data_Location, 'REPORTS\');
 
 
 % Define the folders to search
-Condition_folders = {'01_Eyes_Open_Inscapes', 
-                     '02_Eyes_Closed'};
+Condition_folders = {'03_MMN_Inscapes',
+                     '04_CPT_Inscapes'};
 
 % Set the save directory for the CSV reports 
 CSV_savePathway_condition = append(CSV_savePathway,Condition_folders{Condition},'\');
@@ -86,6 +86,33 @@ parfor ii = 1:N
         %Import data - change the name of the ID
         EEG = pop_loadbv(current_conditionPathway, ...
             Current_vhdrFile);
+
+        % Remove 'boundary' as a marker from the data= residual noise don't
+        % know from where
+        EEG.event(strcmp({EEG.event.type}, 'boundary')) = [];
+
+        % Remove 'R 2' as a marker from the data- residual noise from
+        % PsychoPy
+        EEG.event(strcmp({EEG.event.type}, 'R  2')) = [];
+
+        % Identify start and stop latencies of the MMN
+        MMN1_starts = EEG.event(1).latency;
+        MMN2_starts_inx = find(strcmp({EEG.event.type}, 'S  4'), 1);
+        MMN2_starts = EEG.event(MMN2_starts_inx).latency;
+        MMN1_ends = EEG.event(MMN2_starts_inx -1).latency;
+        MMN2_ends = EEG.event(end).latency;
+
+        % Use the latency information to keep meaningful data
+        % Extract MMN1 (add wiggle room)
+        wr = EEG.srate;
+        EEG1 = pop_select(EEG, 'point', [MMN1_starts-wr MMN1_ends+wr]);
+
+        % Extract MMN2 (add wiggle room)
+        EEG2 = pop_select(EEG, 'point', [MMN2_starts-wr MMN2_ends+wr]);
+        
+        % Merge both segments
+        EEG = pop_mergeset(EEG1, EEG2);
+
         % Save the intial length of the EEG recording
         EEG_size = size(EEG.data);
         Remaining_Samples = EEG_size(2);
@@ -183,7 +210,7 @@ parfor ii = 1:N
         CompRejsString{ii} = {CompRejsStr};
     
         % Segmentation Rejection (100 microVolts)
-        threshold_volt = 75;
+        threshold_volt = 100;
         
         % Find columns to delete
         columnsToDelete = any(EEG.data >= threshold_volt | EEG.data <= threshold_volt*-1, 1);

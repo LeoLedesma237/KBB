@@ -1,4 +1,4 @@
-function output = CleaningRawEEG(Data_Location, Condition, SamplingRate)
+function output = CleaningRawEEG2(Data_Location, Condition, SamplingRate)
 
 % 1. Set the pathway to the EEG data with markers that are synchronized to
 % the EEG (originally called folder)
@@ -24,7 +24,9 @@ CSV_savePathway = append(Data_Location, 'REPORTS\');
 
 % Define the folders to search
 Condition_folders = {'01_Eyes_Open_Inscapes', 
-                     '02_Eyes_Closed'};
+                     '02_Eyes_Closed',
+                     '03_MMN_Inscapes',
+                     '04_CPT_Inscapes'};
 
 % Set the save directory for the CSV reports 
 CSV_savePathway_condition = append(CSV_savePathway,Condition_folders{Condition},'\');
@@ -61,6 +63,7 @@ eegFiles = AllEEG_Condition(~ismember(AllEEG_Condition, filesToRemove));
 N = length(eegFiles);
 
 % Variables to be saved for each iteration
+FileDate = cell(1,N);
 InitialSec = zeros(1,N);
 StartingChannels = zeros(1,N);
 AfterASRSec = zeros(1,N);
@@ -86,6 +89,48 @@ parfor ii = 1:N
         %Import data - change the name of the ID
         EEG = pop_loadbv(current_conditionPathway, ...
             Current_vhdrFile);
+
+        % Obtain date information from the current file
+        fileInfo = dir(fullfile(current_conditionPathway, Current_eegFile));
+    
+        % Store date in FileDate, use indexed assignment
+        FileDate{ii} = {fileInfo.date};
+
+        % % % % Changing EEG.data size depending on condition % % % %
+        if Condition == 3
+            % Remove dumb 'R  2' marker - 
+            EEG.event(strcmp({EEG.event.type}, 'R  2')) = [];
+
+            % Quick QC incase markers not present (recording is short)
+            MMN2_starts_inx = find(strcmp({EEG.event.type}, 'S  4'), 1);
+
+            % Identify start and stop latencies of the MMN
+            MMN1_starts = EEG.event(2).latency; % Skips boundary
+            MMN2_starts = EEG.event(MMN2_starts_inx).latency;
+            MMN1_ends = EEG.event(MMN2_starts_inx -1).latency;
+            MMN2_ends = EEG.event(end).latency;
+    
+            % Use the latency information to keep meaningful data
+            % Extract MMN1 and MM2 (with some wiggle room (wr))
+            wr = EEG.srate;
+            EEG1 = pop_select(EEG, 'point', [MMN1_starts-wr MMN1_ends+wr]);
+            EEG2 = pop_select(EEG, 'point', [MMN2_starts-wr MMN2_ends+wr]);
+            
+            % Merge both segments
+            EEG = pop_mergeset(EEG1, EEG2);
+
+        elseif Condition == 4
+            % Idnetify start and stop latencies of the CPT
+            CPT_starts = EEG.event(2).latency; % Skips boundary
+            CPT_ends = EEG.event(end).latency
+
+            % Use the latency information to keep meaningful data
+            wr = EEG.srate;
+            EEG = pop_select(EEG, 'point', [CPT_starts-wr CPT_ends+wr]);
+            
+            
+        end
+
         % Save the intial length of the EEG recording
         EEG_size = size(EEG.data);
         Remaining_Samples = EEG_size(2);
@@ -183,7 +228,7 @@ parfor ii = 1:N
         CompRejsString{ii} = {CompRejsStr};
     
         % Segmentation Rejection (100 microVolts)
-        threshold_volt = 75;
+        threshold_volt = 100;
         
         % Find columns to delete
         columnsToDelete = any(EEG.data >= threshold_volt | EEG.data <= threshold_volt*-1, 1);
@@ -201,6 +246,7 @@ parfor ii = 1:N
     
         % Create a table with the outputs of the cleaning process
         Output_Table = table( ...
+            {FileDate{ii}'},...
             {Current_eegFile}, ...
             {Condition_folders{Condition}},...
             InitialSec(ii)',...
@@ -217,6 +263,7 @@ parfor ii = 1:N
             Percent_Remaining(ii),...
             {'-'},...
             'VariableNames', { ...
+            'Date',...
             'File_Name',...
             'EEG_Condition',...
             'Start_Recording_Sec',...
@@ -243,7 +290,16 @@ parfor ii = 1:N
 
     catch ME
 
+        % Save the error message as an object
+        ErrorMessage = ME.message;
+
         % Save results only if the value hasn't already been set
+        if isempty(MMN2_starts_inx)
+            ErrorMessage = 'Marker S  4 not present in the data'
+        end
+        if isempty(FileDate{ii})
+            FileDate{ii} = '-';
+        end
         if isempty(InitialSec(ii))
             InitialSec(ii) = 0;
         end
@@ -282,6 +338,7 @@ parfor ii = 1:N
         end
         % Create the output table
         Output_Table = table( ...
+            {FileDate{ii}'},...
             {Current_eegFile}, ...
             {Condition_folders{Condition}},...
             InitialSec(ii)',...
@@ -296,8 +353,9 @@ parfor ii = 1:N
             {CompRejsString{ii}'},...
             RemainingSec(ii),...
             Percent_Remaining(ii),...
-            {ME.message}',...
+            {ErrorMessage}',...
             'VariableNames', { ...
+            'Date',...
             'File_Name',...
             'EEG_Condition',...
             'Start_Recording_Sec',...
@@ -340,6 +398,9 @@ for i = 1:length(csvFiles)
     % Concatenate the current data with the combined data
     combinedData = [combinedData; currentData];
 end
+
+% Sort the Table by date
+combinedData = sortrows(combinedData, 'Date'); 
 
 % Save the combined data in Reports
 SaveFileName = append(Condition_folders{Condition},'_Report.xlsx');
