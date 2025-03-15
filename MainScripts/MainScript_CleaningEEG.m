@@ -10,6 +10,10 @@ eeglab
 Functions_path = append(KBB,'\Preprocessing\GeneralFunctions\');
 addpath(Functions_path)
 
+% Set Pathway to KBB main scoring functions
+GenFunctions_path = append(KBB,'\Scoring\')
+addpath(GenFunctions_path)
+
 % Must specify TIMES_Server (Dependent on Symbolik Link)
 Data_Location = append(KBB,'Data\');
 
@@ -31,7 +35,8 @@ CleaningRawEEG2(Data_Location, 3, 250)
 
 CleaningRawEEG2(Data_Location, 4, 250)
 
-
+% Generate a scoring report
+%EEGCleaningReport
 
 % Release the recruited cores
 delete(gcp('nocreate'))
@@ -52,4 +57,5 @@ delete(gcp('nocreate'))
 
 % Must specify TIMES_Server (Dependent on Symbolik Link)
 %Data_Location = append('C:\Users\lledesma.TIMES\Documents\KBB\Data\');
+
 
