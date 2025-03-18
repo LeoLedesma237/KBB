@@ -1,5 +1,5 @@
 ---
-title: "KBB: Individualized Report"
+title: ""
 author: ""
 date: ""
 output: html_document
@@ -21,7 +21,7 @@ library(kableExtra)
 ```
 
 ```{r pick the ID number}
-ID_num = 41 #41 #62 
+ID_num = 62 #41 #62 
 
 ```
 
@@ -135,24 +135,20 @@ full_data_z <- full_data %>%
 
 ```
 
+### The KBB Project
 
-```{r filter data by participant ID}
+```{r, demographic information as Mei suggested,  results='asis', echo = FALSE}
 data <- full_data_z %>%
   filter(Child_ID == ID_num)
 
-cat("The following report is for the child with the ID: ", ID_num, sep = "")
-```
-### Demographics
 
-Below is the age and sex of the participant.
+cat('\n - Individual report for ID:', ID_num, '\n')
 
-```{r print out the demographics of the current child}
-select(data, Age, Sex) %>%
-  kbl() %>%
-  kable_minimal(full_width = F)
-
+cat('\n - Age:',data$Age,'\n')
+cat('\n - Sex:',data$Sex,'\n')
 
 ```
+
 
 
 ```{r create a function to report zscore results}
@@ -184,39 +180,42 @@ zscore_fun <- function(x) {
 
 ```
 
+**Possible Areas of Developmental Disability According to the Screener**
 
-### CFM DD and Epilepsy Status
-
-Below are the domains from the child functioning module (CFM) that the child were reported to have difficulties in. The table shows all domains that "at least some difficulty" was reported for. Additionally, epilepsy status is also available based on information from the **Birbeck Epilepsy Screener** at the bottom of the table. 
-
-```{r print out CFM DD status by severity and epsilepsy status}
-# Obtain variables of interest
-KBB_CFM <- data %>%
-  select(KBB_CFM_DD_type, Epilepsy)
-
+```{r reporting potential difficulties in pretty font,  results='asis', echo = FALSE}
 # Report the CFM domains that at least some difficulty was reported
-KBB_CFM2 <- data.frame(Domains = do.call(c, str_split(KBB_CFM$KBB_CFM_DD_type, "; "))) %>%
-  mutate(`Difficulty Reported` = "Yes")
-  
-# Add Epilepsy info into the dataframe
-KBB_CFM3 <- rbind(KBB_CFM2, tibble(Domains = "Epilepsy",
-                           `Difficulty Reported` = KBB_CFM$Epilepsy))
+Num_Diff <- data.frame(Domains = do.call(c, str_split(data$KBB_CFM_DD_type, "; ")))
 
-# For nonDD, if Domains is = NA replace reported difficulty to No
-if(is.na(KBB_CFM3$Domains[1])) {
-  KBB_CFM3$`Difficulty Reported`[1] <- "No Difficulties Reported"
+if(sum(is.na(Num_Diff)) == 1) {
+  
+  cat('\n - No difficulties were reported for the CFM \n')
+  
+} else {
+  
+  Num_Diff %>%
+    mutate(`Reported Difficulties` = "Yes") %>%
+    kbl() %>%
+    kable_minimal(full_width = F)
   
 }
 
-# Print out the table
-KBB_CFM3 %>%
-  kbl() %>%
-  kable_styling(full_width = F)
+if(data$Epilepsy == "Yes") {
+  cat('\n - A potential risk for having epilepsy \n')
+} else {
+  cat('\n - No potential risk for having epilepsy \n')
+  
+}
+
+
+
 ```
 
-### Physical Data
 
-**Eye sight**: The Snelle chart system was use to measure seeing ability. The score is represented as a fraction in which the **numerator** represents the distance in feet the child needs to see a letter or symbol while the **denominator** represents the distance in feet the average child needs to see that same letter or symbol. The numerator is typically fixed to the value 20, thus what decides visual acuity is the **denominator**. Therefore, if the denominator is smaller than 20, then the child tends to have better eye-sight because they can see something well from 20 feet that will require the average child a shorter distance to view it. However, if the denominator is larger, then that indicates the child has poorer vision since it takes them 20 feet to view a symbol that the average child can see from more than 20 feet away.
+
+
+#### 1. Eyesight
+
+The score for seeing ability Is expressed as a fraction. The top number is the distance at which your child can see a letter or symbol. The lower number is the distance at which the average child can see a letter or symbol. Larger values of this lower number indicate the child’s poorer vision.
 
 Summary Examples:
 
@@ -238,7 +237,9 @@ Eyes %>%
 
 ```
 
-**Hearing**: A hearing test was performed to identify the decibels (dB) needed for the child to perceive (hear) three different frequencies (1000Hz, 2000Hz, and 4000 Hz) in both ears. Ideally the smaller the decibal that it takes to perceive the sound, the better the hearing. 
+#### 2. Hearing
+
+The score for hearing ability is expressed as decibels (dB; “loudness”) of a sound needed for the child to hear the sound; larger values indicate worse hearing.
 
 Summary Examples:
 
@@ -271,87 +272,30 @@ Ears %>%
   kable_styling(full_width = F)
 ```
 
-### Assessment Scoring
+### 3. Assessment
 
-For the remaining assessments a z-score was calculated from each raw score within specific age groups specified below. Thus, only the scores of children within an age group were compared to each other- this controls for performance improving by an increase in age. 
-
-```{r group sample size}
-# Create a dataframe for the groups created
-group_n <- data.frame(table(full_data$age_group))
-
-# Clean the data a bit
-group_n2 <- rename(group_n, Group = Var1, n = Freq)
-group_n2$Group <- gsub("g", "",group_n2$Group)
-group_n2$order <- as.numeric(sapply(str_split(group_n2$Group, "_"), function(x) x[1]))
-group_n2 <- arrange(group_n2, order)
-group_n3 <- select(group_n2, -order)
+Scores for each child on these tests are calculated to compare the child’s performance with the performance of other children in the study who are in the same age group. Below are the numbers of children in each age group used to calculate your child’s score.
 
 
-# Identify how many children with ID have full data
-older <- full_data %>%
-  filter( Age > 5.9) %>%
-  select(Age, PSC_Performance, CBC6_18_anxious_depressed:LetDig_Performance, age_group) %>%
-  filter(complete.cases(.))
+```{r, how many children in the group of comparison,  results='asis', echo = FALSE}
+# Extract all children within the current age group of the child
+current_age_group_all_data <- full_data %>%
+  filter(age_group == data$age_group) 
 
-older2 <- select(older, age_group)
+# Keeps vars of interest that are not filled with NA's
+current_age_group_all_data2 <- current_age_group_all_data %>%
+  select(RV_StopRule_Num:LetDig_Performance)
 
-younger <- full_data %>%
-  filter( Age < 6) %>%
-  select(Age, PSC_Performance, CBC3_6_emotionally_reactive:CBC3_6_opositional_defiant_problems , RV_Performance:LetDig_Performance, age_group) %>%
-  filter(complete.cases(.))
+cat('\n - There are at most', nrow(current_age_group_all_data2), 'children in this age group for comparison \n')
 
-younger2 <- select(younger, age_group)
-
-# Combine these into one dataset
-available_data <- rbind(older2, younger2)
-
-available_data_df <- data.frame(table(available_data$age_group))
-
-# Cheese to get the order I want 
-group_n3 %>%
-  mutate(Group = gsub("_","-", Group)) %>%
-  rename(`Age Group` = Group) %>%
-  kbl() %>%
-  kable_minimal(full_width = F)
-
+cat('\n - The score (called a z-score) indicates how far your child’s score is from their age group’s average score.\n' )
 ```
 
 
 
-The z-scores represent how far the child's score is away from the mean (the average of the sample), with the value -1 being one standard deviation below the mean, a value of 0 indicating a score at the mean, and a value of 1 indicating a score one standard deviation above the mean. These z-scores can be converted into percentiles to create categories indicating how the child performed compared to their peers in the same age group. The categories chosen are the following:
+#### a. Mental Health - emotional, behavioral, and social problems
 
-```{r printing scoring categories by zscores}
-table_zscores <- data.frame(
-  
-  Zscore = c("z ≤ -1.645", 
-             "-1.645 < z ≤ -0.84",
-             "-0.84 ≤ z ≤ 0.84",
-             "0.84 ≤ z ≤ 1.645",
-             "z ≥ 1.645"),
-  Category = c("Bottom 5% - Lowest",
-               "5-20% - Below average",
-               "20-80% - Average",
-               "80-95% - Above average",
-               "Top 5% - Highest") 
-)
-
-
-# Print the table
-table_zscores %>%
-  kbl() %>%
-  kable_minimal(full_width = F)
-
-```
-
-
-### Assessment Scoring Reliability 
-
-A brief quality control assessment will included for each of the tasks below. This will indicate if the participant had missing data for an item, which can bias their results. In these cases the interpretation of their score will have to be done so with caution. 
-
-
-### Mental Health (PSC and ASEBA)
-
-Mental health was measured by the **Pediatric Symptom Checklist (PSC)** and the age specific **ASEBA Child Behavior Checklist (CBC)**. The **PSC** is a test that measures a child's emotional, behavioral and psychosocial functioning. It does this by asking questions that require "never", "sometimes", and "always" as responses. These responses then get added to produce a score, in which the higher the score, the higher the emotional or behavioral difficulties are present at a stronger severity. 
+The PSC measures a child’s general emotional, behavioral and psychosocial functioning. A higher score indicates a higher level of emotional or behavioral difficulties.    
 
 ```{r reporting PSC }
 # Select PSC
@@ -533,7 +477,8 @@ IQ_measures2 %>%
 
 
 ```{r IQ measures violation}
-full_data$TR_SR_Viola
-full_data$PR_SR_Viola
-full_data$LetDig_NA.Num
+#full_data$PR_SR_Viola
+#full_data$TR_SR_Viola
+#full_data$LetDig_NA.Num
+
 ```

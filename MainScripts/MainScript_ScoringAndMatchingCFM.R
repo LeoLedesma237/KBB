@@ -1,6 +1,6 @@
 # Instructions:
 # Run the first 23 lines of code
-# After data have been imported and scored, run the first 16 lines of code
+# After data have been imported and scored, run the first 20 lines of code
 # Run the remaining lines of code, manually score, then rerun the remaining again 
 
 
