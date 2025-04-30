@@ -128,6 +128,10 @@ write.xlsx(list(data = Final.Data), file =  paste0(FinalData_PW, "Comprehensive 
 Siblings.DOE.arranged <- read_excel(paste0(MatchedSibling_PW, "Final_ID_Tracker.xlsx"), sheet= "Siblings") %>%
   arrange(Date_of_Evaluation)
 
+# Add  a Medical Record Row
+Siblings.DOE.arranged <- Siblings.DOE.arranged %>%
+  mutate(MedicalRecord = ifelse(KBB_DD_status == "Yes", "Yes","No"))
+
 # Save the data
 write.xlsx(list(data = Siblings.DOE.arranged), file =  paste0(MatchedSibling_PW, "Final_ID_Tracker_send_to_A.xlsx"))
 

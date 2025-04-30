@@ -80,13 +80,15 @@ full_data <- drop_na(full_data, Child_ID)
 
 full_data <- full_data %>%
   mutate(age_group = case_when(
-     Age >= 2 & Age < 5 ~ "g2_4",
+     Age >= 2 & Age < 5 ~ "g3_4",
      Age >= 5 & Age < 9 ~ "g5_8",
      Age >= 9 & Age < 13 ~ "g9_12",
      Age >= 13 & Age < 16 ~ "g13_15",
      Age >= 16 & Age < 19 ~ "g16_19",
      TRUE ~ "ERROR"
   ))
+
+# table(full_data$age_group)
 
 # Drop any ERROR (kids have not have data collected yet)
 full_data <- filter(full_data, age_group != "ERROR")

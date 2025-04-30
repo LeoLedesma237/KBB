@@ -1,0 +1,456 @@
+---
+title: "Age Group Justification (Parent Report)"
+author: "Leandro Ledesma"
+date: "2025-04-26"
+output: html_document
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+```
+
+```{r loading in all required data}
+# Set working directory to where your GitHub repository is
+DataLocation = "~/Documents/Github/KBB/"
+
+# Set working directory to where the final data is
+setwd('C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Behavioral')
+
+# Load in the full data
+full_data <- read_excel("full_data.xlsx")
+
+# drop any NAs in the dataset for Child_ID
+full_data <- drop_na(full_data, Child_ID)
+```
+
+```{r load in dd status data}
+# Set the location for where the ID tracker is saved and the other where the CFM data is saved
+DataLocation2 = "C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener/Matched_Siblings/"
+DataLocation3 = "C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener/"
+
+# Load tracker ID infor
+setwd(DataLocation2)
+trackerID <- read_excel("Final_ID_Tracker.xlsx")
+
+# Load the CFM data
+setwd(DataLocation3)
+CFM <- read_excel("All Children.xlsx")
+
+# Some minor data cleaning
+trackerID2 <- select(trackerID, full_child_ID = Child_ID, Child_ID = ID)
+CFM2 <- select(CFM, full_child_ID = Child_ID, KBB_CFM_DD_type)
+
+# Merge the datasets by child_ID
+CFM_ID <- trackerID2 %>%
+  full_join(CFM2, by = "full_child_ID") %>%
+  select(-full_child_ID)
+
+# Introdude this info into full data
+full_data <- full_data %>%
+  full_join(CFM_ID, "Child_ID")
+  
+# drop NA's in Child_ID
+full_data <- drop_na(full_data, Child_ID)
+```
+
+## PSC
+```{r investigating the sample size of PSC}
+# Save only data from receptive vocanulary
+PSC <- select(full_data, Child_ID,  Age, PSC_Performance)
+ 
+# Keep only rows with no missing data
+PSC2 <- PSC %>% filter(complete.cases(.))
+
+# Round Age to the nearest integer
+PSC2$Age <- round(PSC2$Age)
+
+# Plot Age and Performance
+PSC2 %>%
+  mutate(Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = PSC_Performance)) +
+  stat_summary(fun = "mean", geom = "bar", fill = "white", color = "black") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  theme_classic() +
+  #ylim(0,32) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Number of Correct Items",
+       title = "Pediatric Symptom Checklist Composite Score by Age")
+
+
+# Create a dataset with the frequency of children that fall under an age (integer)
+PSC2_age_df <- data.frame(table(PSC2$Age))
+PSC2_age_df <- select(PSC2_age_df, Age = Var1, Frequency = Freq)
+
+# Create a variable for different age groups
+PSC2_age_df2 <- PSC2_age_df %>%
+  mutate(Age = as.character(Age),
+         Age = as.numeric(Age),
+         Age_Group = case_when(
+    Age >= 2 ~ "Group (3-18)",
+    TRUE ~ "ERROR"
+  )) %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(GRM_Qualified = ifelse(Group_n >= 200, "Yes", "No"))
+
+# Print as a table
+PSC2_age_df2 %>%
+  kbl(caption = "Pediatric Symptom Checlist (PSC) Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+
+
+## CBC 3-6
+```{r investigating the sample size of CBC 3 to 6}
+# Save only data from the CBC 3-6
+CBC3_6 <- select(full_data , Child_ID, Age, CBC3_6_emotionally_reactive: CBC3_6_opositional_defiant_problems)
+
+# Remove anyone who should not have data from this assessment
+CBC3_6v2 <- filter(CBC3_6, Age <= 7)
+
+# Keep only rows with no excessive missing data
+CBC3_6v2 <- CBC3_6v2[rowSums(is.na(CBC3_6v2)) < 3,]
+
+# Round children Age to an integer
+CBC3_6v2$Age <- round(CBC3_6v2$Age)
+
+
+# Plot Age and Performance
+CBC3_6v2 %>%
+  pivot_longer(cols = CBC3_6_emotionally_reactive :CBC3_6_opositional_defiant_problems,
+               names_to = "Scales", values_to = "Scores") %>%
+  mutate(Scales = gsub("CBC3_6_","", Scales),
+         Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = Scores)) +
+  stat_summary(fun = "mean", geom = "bar") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  facet_wrap(~Scales, scale = "free_y") +
+  theme_classic() +
+  #coord_flip() +
+  #ylim(0,32) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Score",
+       title = "CBC 3-6 Scale Score by Age")
+
+
+# Create a Frequency Table
+CBC3_6v2_df <- rename(data.frame(table(CBC3_6v2$Age)), Age = Var1, Frequency = Freq) %>%
+  mutate(Age_Group = "Group (3-6)") %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(GRM_Qualified = ifelse(Group_n >= 200, "Yes", "No"))
+
+# Print out table
+CBC3_6v2_df %>%
+  kbl(caption = "CBC3-6 Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+
+## CBC 6-18
+```{r investigating the sample size of CBC 6 to 18}
+# Save only data from the CBC 3-6
+CBC6_18 <- select(full_data , Child_ID, Age, CBC6_18_anxious_depressed: CBC6_18_Total_Prob)
+
+# Remove anyone who should not have data from this assessment
+CBC6_18 <- filter(CBC6_18, Age >= 5)
+
+# Keep only rows with no excessive missing data
+CBC6_18v2 <- CBC6_18[rowSums(is.na(CBC6_18)) < 3,]
+
+# Round children Age to an integer
+CBC6_18v2$Age <- round(CBC6_18v2$Age)
+
+
+# Plot Age and Performance
+CBC6_18v2 %>%
+  filter(Age < 12) %>%
+  pivot_longer(cols = CBC6_18_anxious_depressed :CBC6_18_Total_Prob,
+               names_to = "Scales", values_to = "Scores") %>%
+  mutate(Scales = gsub("CBC6_18_","", Scales),
+         Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = Scores)) +
+  stat_summary(fun = "mean", geom = "bar") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  facet_wrap(~Scales, scale = "free_y") +
+  theme_classic() +
+  #coord_flip() +
+  #ylim(0,32) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Score",
+       title = "CBC 6-18 Scale Score by Age (6-11)")
+
+# Plot Age and Performance
+CBC6_18v2 %>%
+  filter(Age >= 12) %>%
+  pivot_longer(cols = CBC6_18_anxious_depressed :CBC6_18_Total_Prob,
+               names_to = "Scales", values_to = "Scores") %>%
+  mutate(Scales = gsub("CBC6_18_","", Scales),
+         Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = Scores)) +
+  stat_summary(fun = "mean", geom = "bar") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  facet_wrap(~Scales, scale = "free_y") +
+  theme_classic() +
+  #coord_flip() +
+  #ylim(0,32) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Score",
+       title = "CBC 6-18 Scale Score by Age (12-19)")
+
+
+# Create a Frequency Table
+CBC6_18v2_df <- rename(data.frame(table(CBC6_18v2$Age)), Age = Var1, Frequency = Freq) %>%
+  mutate(Age = as.character(Age),
+         Age = as.numeric(Age),
+         Age_Group = case_when(
+    Age < 12 ~ "Group (6-11)",
+    TRUE ~ "Group (12-19)"
+  )) %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(GRM_Qualified = ifelse(Group_n >= 200, "Yes", "No"))
+
+# Print out table
+CBC6_18v2_df %>%
+  kbl(caption = "CBC6-18 Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+
+
+## Receptive Vocabulary
+```{r investigating the effect of Age on Receptive Vocabulary}
+# Save only data from receptive vocanulary
+RV <- select(full_data, Child_ID,  Age, RV_Performance)
+ 
+# Keep only rows with no missing data
+RV2 <- RV %>% filter(complete.cases(.))
+
+# Round Age to the nearest integer
+RV2$Age <- round(RV2$Age)
+
+# Plot Age and Performance
+RV2 %>%
+  mutate(Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = RV_Performance)) +
+  stat_summary(fun = "mean", geom = "bar", fill = "white", color = "black") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  theme_classic() +
+  ylim(0,32) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Number of Correct Items",
+       title = "Receptive Vocabulary Performance by Age")
+
+
+# Create a dataset with the frequency of children that fall under an age (integer)
+RV2_age_df <- data.frame(table(RV2$Age))
+RV2_age_df <- select(RV2_age_df, Age = Var1, Frequency = Freq)
+
+# Create a variable for different age groups
+RV2_age_df2 <- RV2_age_df %>%
+  mutate(Age = as.character(Age),
+         Age = as.numeric(Age),
+         Age_Group = case_when(
+    Age < 5 ~ "Group (2-4)",
+    Age >= 5 & Age < 8 ~ "Group (5-7)",
+    Age >= 8 & Age < 11 ~ "Group (8-10)",
+    Age >= 11 & Age < 15 ~ "Group (11-14)",
+    Age >= 15 ~ "Group (15-19)",
+    TRUE ~ "ERROR"
+  )) %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"))
+
+# Print as a table
+RV2_age_df2 %>%
+  kbl(caption = "Receptive Vocabulary Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+```
+
+
+## Pattern Reasoning
+```{r investigating the effect of Age on Pattern Reasoning}
+# Save only data from pattern reasoning
+PR <- select(full_data, Child_ID,  Age, PR_Performance)
+ 
+# Keep only rows with no missing data
+PR2 <- PR %>% filter(complete.cases(.))
+
+# Round Age to the nearest integer
+PR2$Age <- round(PR2$Age)
+
+# Plot Age and Performance
+PR2 %>%
+  mutate(Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = PR_Performance)) +
+  stat_summary(fun = "mean", geom = "bar", fill = "white", color = "black") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  theme_classic() +
+  ylim(0,37) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Number of Correct Items",
+       title = "Pattern Reasoning Performance by Age")
+
+# Create a dataset with the frequency of children that fall under an age (integer)
+PR2_age_df <- data.frame(table(PR2$Age))
+PR2_age_df <- select(PR2_age_df, Age = Var1, Frequency = Freq)
+
+# Create a variable for different age groups
+PR2_age_df2 <- PR2_age_df %>%
+  mutate(Age = as.character(Age),
+         Age = as.numeric(Age),
+         Age_Group = case_when(
+    Age < 9 ~ "Group (4-8)",
+    Age >= 8 & Age < 13 ~ "Group (9-12)",
+    Age >= 13 & Age < 16 ~ "Group (13-15)",
+    Age >= 16 ~ "Group (16-19)",
+    TRUE ~ "ERROR"
+  )) %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"))
+
+# Print as a table
+PR2_age_df2 %>%
+  kbl(caption = "Pattern Reasoning Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+```
+
+## Triangles
+```{r investigating the effect of Age on Triangles}
+# Save only data from pattern reasoning
+TR <- select(full_data, Child_ID,  Age, TR_Performance)
+ 
+# Keep only rows with no missing data
+TR2 <- TR %>% filter(complete.cases(.))
+
+# Round Age to the nearest integer
+TR2$Age <- round(TR2$Age)
+
+# Plot Age and Performance
+TR2 %>%
+  mutate(Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = TR_Performance)) +
+  stat_summary(fun = "mean", geom = "bar", fill = "white", color = "black") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  theme_classic() +
+  ylim(0,37) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Number of Correct Items",
+       title = "Triangles Performance by Age")
+
+# Create a dataset with the frequency of children that fall under an age (integer)
+TR2_age_df <- data.frame(table(TR2$Age))
+TR2_age_df <- select(TR2_age_df, Age = Var1, Frequency = Freq)
+
+# Create a variable for different age groups
+TR2_age_df2 <- TR2_age_df %>%
+  mutate(Age = as.character(Age),
+         Age = as.numeric(Age),
+         Age_Group = case_when(
+    Age < 5 ~ "Group (2-4)",
+    Age >= 5 & Age < 8 ~ "Group (5-7)",
+    Age >= 8 & Age < 11 ~ "Group (8-10)",
+    Age >= 11 & Age < 15 ~ "Group (11-14)",
+    Age >= 15 ~ "Group (15-19)",
+    TRUE ~ "ERROR"
+  )) %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"))
+
+# Print as a table
+TR2_age_df2 %>%
+  kbl(caption = "Pattern Reasoning Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+```
+
+## Letter and Digit
+```{r investigating the effect of Age on Letter and Digit}
+# Save only data from pattern reasoning
+LD <- select(full_data, Child_ID,  Age, LetDig_Performance)
+ 
+# Keep only rows with no missing data
+LD2 <- LD %>% filter(complete.cases(.))
+
+# Round Age to the nearest integer
+LD2$Age <- round(LD2$Age)
+
+# Plot Age and Performance
+LD2 %>%
+  mutate(Age = factor(Age)) %>%
+  ggplot(aes(x = Age, y = LetDig_Performance)) +
+  stat_summary(fun = "mean", geom = "bar", fill = "white", color = "black") +
+  geom_jitter(size = 1, width = .2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = .2, color = "red", size = 1) +
+  theme_classic() +
+  ylim(0,37) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Age",
+       y = "Number of Correct Items",
+       title = "Letter and Digit Span Performance by Age")
+
+# Create a dataset with the frequency of children that fall under an age (integer)
+LD2_age_df <- data.frame(table(LD2$Age))
+LD2_age_df <- select(LD2_age_df, Age = Var1, Frequency = Freq)
+
+# Create a variable for different age groups
+LD2_age_df2 <- LD2_age_df %>%
+  mutate(Age = as.character(Age),
+         Age = as.numeric(Age),
+         Age_Group = case_when(
+    Age < 5 ~ "Group (2-4)",
+    Age >= 5 & Age < 8 ~ "Group (5-7)",
+    Age >= 8 & Age < 11 ~ "Group (8-10)",
+    Age >= 11 & Age < 15 ~ "Group (11-14)",
+    Age >= 15 ~ "Group (15-19)",
+    TRUE ~ "ERROR"
+  )) %>%
+  group_by(Age_Group) %>%
+  mutate(Group_n = sum(Frequency)) %>%
+  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"))
+
+# Print as a table
+LD2_age_df2 %>%
+  kbl(caption = "Letter and Digit Span Age Frequency and Sample Size by Age Group",
+      align = c("c", "c", "c", "c", "c")) %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+```

@@ -24,6 +24,9 @@ Demo <- read_excel(paste0(DataLocation,"FINAL_DS/Screener/Matched_Siblings/Final
 # Set a save pathway for the full data
 save.pathway <- paste0(DataLocation,"FINAL_DS/Behavioral/full_data.xlsx")
 
+# Set age group parameters
+
+
 ###########                                   #############
 ########### THE REST OF THE CODE IS AUTOMATIC #############
 ###########                                   #############
