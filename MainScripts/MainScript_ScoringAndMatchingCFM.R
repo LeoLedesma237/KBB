@@ -1,6 +1,6 @@
 # Instructions:
 # Run the first 23 lines of code
-# After data have been imported and scored, run the first 20 lines of code
+# After the data have been imported and scored, run the first 20 lines of code
 # Run the remaining lines of code, manually score, then rerun the remaining again 
 
 
@@ -63,13 +63,18 @@ HOH.Potential.Matches.unnested.final <- HOH.Potential.Matches.unnested %>%
 
 # Save the partialled out HOH Potential Matches
 HOH.Potential.Matches.unnested.final.shorted <- HOH.Potential.Matches.unnested.final %>%
-  select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary,
+  select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, dad_sib_group, mom_sib_group, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary,
          EEG_Group:EEG_Exc_Rea) %>%
   arrange(HOH_ID)
 
 # Minor data cleaning (reading data creates a time for date variables)
 HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation <- as.character(HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation)
 HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth <- as.character(HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth)
+
+# Load the relatedness function
+source("Scoring/scoring_functions/related_fun.R")
+HOH.Potential.Matches.unnested.final.shorted$relatedness <- related_fun(HOH.Potential.Matches.unnested.final.shorted)
+HOH.Potential.Matches.unnested.final.shorted <- select(HOH.Potential.Matches.unnested.final.shorted, HOH_ID:Child_Last_Name,relatedness, everything())
 
 # Save the dataset
 write.xlsx(list(data = HOH.Potential.Matches.unnested.final.shorted), file =  paste0(MatchedSibling_PW,"Subjects_that_need_an_ID.xlsx"))
@@ -87,8 +92,10 @@ Reconstructed.data.final <- rbind(Incorrect.Screeners.final,
                                   HOH.No.Matches.unnested.final,
                                   HOH.Potential.Matches.unnested.final)
 
+
 # Give it an empty variable that represents ID
 Reconstructed.data.final$ID <- NA
+Reconstructed.data.final$Relatedness <- NA
 
 # Convert the DOE into character
 Reconstructed.data.final$Date_of_Evaluation <- as.character(Reconstructed.data.final$Date_of_Evaluation)
@@ -125,7 +132,8 @@ write.xlsx(list(data = Final.Data), file =  paste0(FinalData_PW, "Comprehensive 
 
 
 # Quick modification
-Siblings.DOE.arranged <- read_excel(paste0(MatchedSibling_PW, "Final_ID_Tracker.xlsx"), sheet= "Siblings") %>%
+Siblings.DOE.arranged <- read_excel(paste0(MatchedSibling_PW, "Final_ID_Tracker.xlsx"), sheet= "Siblings",
+                                    guess_max = 4000) %>%
   arrange(Date_of_Evaluation)
 
 # Add  a Medical Record Row
@@ -154,8 +162,8 @@ setdiff(Binded.data$Child_ID, Final.Data$Child_ID)
 length(Binded.data$Child_ID) == length(Final.Data$Child_ID)
 
 # If not the same size check for duplicates in both dataset
-Binded.data[duplicated(Binded.data$Child_ID),]
-
+(duplicated_child_IDs <- Binded.data$Child_ID[duplicated(Binded.data$Child_ID)])
+Binded.data %>% filter(Child_ID %in% duplicated_child_IDs) 
 
 # Does every HOH Siblings have a DD and no DD pair?
 Siblings %>%
@@ -187,3 +195,4 @@ setdiff(1:length(Siblings$Child_ID), Siblings$ID)
 
 # Any overall summary missing?
 sum(is.na(Final.Data$Overall.Summary))
+

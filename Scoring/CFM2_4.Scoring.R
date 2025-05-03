@@ -38,6 +38,8 @@ CFM2_4.removed.variables <- CFM2_4.uncleaned %>%
          Child_Date_of_Birth,
          BF = Child_s_Biological_Father,
          BM = Child_s_Biological_Mother,
+         mom_sib_group = Child_s_Biological_Mother_Sibling_Group,
+         dad_sib_group = Child_s_biological_Father_Sibling_Group,
          Respondant_relationship = `_08_Respondant_s_Relationship_`,
          CF1,
          CF2,
@@ -90,6 +92,10 @@ CFM2_4.HOH.ID <- CFM2_4.cleaned.date %>%
                           Child_Last_Name,
                           Child_Date_of_Birth,
                           Child_Gender))
+
+# Minor data cleaning (dad_sib_group)
+CFM2_4.HOH.ID <- CFM2_4.HOH.ID %>%
+  mutate(dad_sib_group = ifelse(dad_sib_group == "bb_1","dd",dad_sib_group))
 
 
 # Changing binary responses to strings 
