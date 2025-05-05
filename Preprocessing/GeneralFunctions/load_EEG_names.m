@@ -17,6 +17,6 @@ function [EEGFileNames] = load_EEG_names(EEG_dir, EEG_type, full)
 
     if strcmp(full, 'yes')       
         % Merge the full pathway and the EEG filenames together
-        EEGFileNames = append(EEG_dir, EEG_filenames);
+        EEGFileNames = append(EEG_dir, EEGFileNames);
     end
 end

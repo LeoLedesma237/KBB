@@ -11,22 +11,23 @@
 % named EEG filenames.
 
 function [correctEEG, outputMessage] = filter_bad_EEG_names(EEG_names, desired_extension)
-    
-    % Use contains to check if each file name has the desired extension
-    correctEEG = EEG_names(contains(EEG_names, desired_extension));
-    
-    % Get the removed file names
-    outputMessage = EEG_names(~contains(EEG_names, desired_extension));
+
+    % allow a single string or a cell array of strings
+    if ischar(desired_extension) || isstring(desired_extension)
+        desired_extension = {desired_extension};
+    end
+
+    keep = false(size(EEG_names));
+    for k = 1:numel(desired_extension)
+        keep = keep | contains(EEG_names, desired_extension{k});
+    end
+
+    correctEEG     = EEG_names(keep);
+    outputMessage  = EEG_names(~keep);
 
     if isempty(outputMessage)
-
-        % make a statement that everything was successful
-        outputMessage = append('All ',desired_extension, ' files were named correctly');
-
+        outputMessage = 'All files were named correctly';
     else
-        % Add a warning that these files need to be fixed
-        outputMessage = append('Warning: at least one EEG file was not named correctly! Must be fixed for them to be cleaned');
-
+        outputMessage = 'Warning: at least one EEG file was not named correctly! Must be fixed for them to be cleaned';
     end
-       
 end
