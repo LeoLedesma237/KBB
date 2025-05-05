@@ -5,7 +5,8 @@ library(lubridate)
 
 
 # Load in CFM2_4 files
-CFM5_17.uncleaned <- read_excel(paste0(DataLocation,"RAW_DATA/Screener/CFM5_17_Raw.xlsx"))
+CFM5_17.uncleaned <- read_excel(paste0(DataLocation,"RAW_DATA/Screener/CFM5_17_Raw.xlsx"),
+                                guess_max = 4000)
 
 # Create a save pathway
 save.pathwayCFM5_17 <- paste0(DataLocation,"MODIFIED_DS/Screener/CFM5_17_clean.csv")
@@ -37,6 +38,8 @@ CFM5_17.removed.variables <- CFM5_17.uncleaned %>%
          Child_Date_of_Birth,
          BF = Child_s_Biological_Father,
          BM = Child_s_Biological_Mother,
+         mom_sib_group = Child_s_Biological_Mother_Sibling_Group,
+         dad_sib_group = Child_s_Biological_Father_Sibling_Group,
          Respondant_relationship = `_08_Respondent_Relationship_to`,
          CF1,
          CF2,
