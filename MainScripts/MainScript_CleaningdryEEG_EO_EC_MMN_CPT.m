@@ -1,10 +1,10 @@
 %%%%%%%%%%%%%%%%%%%% CONFIGURATION NEEDED %%%%%%%%%%%%%%%%%%%%%
 % Set a KBB pathway - this is one of the few pathaways that changes across
 % PCs
-KBB = 'C:\Users\lledesma\Documents\';
+KBB = 'C:\Users\KBB DATA ENTRY\Documents\';
 
 % Set pathway to run EEGLAB
-EEGLAB_Path = append(KBB, 'MATLAB\eeglab2024.2');
+EEGLAB_Path = append(KBB, 'MATLAB\eeglab_current\eeglab2024.0');
 addpath(EEGLAB_Path)
 eeglab
 
@@ -13,7 +13,7 @@ eeglab
 EEGFUN_path = append(KBB, 'GitHub\EEG\EEG_Cleaning\dry_ERP');
 EEGFUN2_path = append(KBB, 'GitHub\EEG\EEG_Cleaning\dry_rsEEG');
 EEGFUN3_path = append(KBB, 'GitHub\EEG\generalfun');
-EEGFUN4_path = append(KBB, 'GitHub\ONR_MBAP\Preprocessing\CleaningEEG');
+EEGFUN4_path = append(KBB, 'GitHub\KBB\Preprocessing');
 Functions_path = append(KBB, 'GitHub\KBB\Preprocessing\GeneralFunctions\');
 GenFunctions_path = append(KBB, 'GitHub\KBB\Scoring\');
 addpath(EEGFUN_path)
