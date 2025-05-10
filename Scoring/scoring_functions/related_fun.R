@@ -3,6 +3,13 @@ related_fun <- function(dataset) {
   # For testing
   #dataset = HOH.Potential.Matches.unnested.final.shorted
   
+  # If the dataset is empty QC
+  if(dim(dataset)[1] == 0) {
+    paste("The dataset is empty")
+    
+    
+  } else {
+  
   # Extract the DD from the nonDD children
   DD <- dataset[dataset$KBB_DD_status == "Yes",]
   noDD <- dataset[dataset$KBB_DD_status == "No",]
@@ -85,4 +92,6 @@ related_fun <- function(dataset) {
   }
   # Return the relationship status as a vector
   do.call(c, Relationship)
+  
+  }
 }
