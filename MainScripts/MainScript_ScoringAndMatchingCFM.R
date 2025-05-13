@@ -184,6 +184,7 @@ Final.Data <- Final.Data %>%
                                              "Control for Excluded Child",
                                              "Manual: Unable to Match",
                                              "Manual: Matched Half-Siblings",
+                                             "Manual: Matched Half-Siblings (Old)",
                                              "Manual: Matched Siblings",
                                              "Manual: Matched Cousins")))
 
@@ -263,6 +264,10 @@ MatchedIDs %>%
 sum(is.na(Final.Data$Overall.Summary))
 
 # Are there any Children_ID in the Final_ID_Tracker.xlsx tabs and NOT in the MatchedID tab (Must be 0)
+# Remove the (old) half sibling matches from the Half-Sibling data
+Half_Siblings <- Half_Siblings %>%
+  filter(Overall.Summary != "Manual: Matched Half-Siblings (Old)")
+
 setdiff(Siblings$Child_ID, MatchedIDs$Child_ID)
 setdiff(Half_Siblings$Child_ID, MatchedIDs$Child_ID)
 setdiff(Cousins$Child_ID, MatchedIDs$Child_ID)
