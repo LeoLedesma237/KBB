@@ -88,7 +88,8 @@ errors.vector <- c("Incorrect Screener",
                    "Recruited With Incorrect Screener",
                    "Control for Incorrect Screener",
                    "Should have been Excluded",
-                   "Control for Excluded Child") 
+                   "Control for Excluded Child",
+                   "Manual: Matched Half-Siblings (Old)") 
 
 errors.df <- Comprehensive.Screener.unnested %>%
   filter(Overall.Summary %in% errors.vector) %>%
@@ -106,6 +107,7 @@ report.vector <- c("Excluded Children",
                    "No Matches Within HOH",
                    "Manual: Unable to Match",
                    "Manual: Matched Half-Siblings",
+                   "Manual: Matched Cousins",
                    "Manual: Matched Siblings")
 
 report.df <- Comprehensive.Screener.unnested %>%
@@ -128,6 +130,8 @@ The table below describes the number of errors in data collection so far. These 
 - **Controls for Incorrect Screener**: If a proband is given an ID then so is their sibling. These are the siblings that correspond with the probands receiving the incorrect screener.
 - **Should have been Excluded**: These are proband that should have been excluded because they are either blind, deaf, or immobile. However, they were recruited and given an ID. Their data will not be included in behavioral/neuroimaging analyses.
 - **Control for Excluded Children**: If a proband is given an ID then so is their sibling. These are the siblings that correspond with the probands that should have been excluded.
+- **Manual: Matched Half-Siblings (Old):** These are half-sibling matches that were given an ID too late- they reside in an area where the team will no longer be collecting data from- thus they will a part of the error category. Note: Their originally given ID's have been removed and given to other children. 
+
 ```{r print out the error table, echo = FALSE}
 errors.df %>% 
   kbl() %>%
@@ -135,7 +139,7 @@ errors.df %>%
 
 ```
 
-These errors occurred before code was created to identify the children and prevent them from being recruited. This code is now active thus only the 'Incorrect Screener' number should change from now on. 
+These errors (except for the manual half-silbing (old)) occurred before code was created to identify the children and prevent them from being recruited. This code is now active thus only the 'Incorrect Screener' number should change from now on. 
 
 ### Report Table
 
@@ -144,10 +148,9 @@ The numbers reported in this table and those above are **mutually exclusive**. N
 - **Excluded Chidren**: A proband who has "Cannot at all" reported for seeing, hearing, or walking. A non-DD sibling with at least "some difficulty" in any of these domains. 
 - **No Matches Within HOH**: All the children that were in a household with all DD or all noDD, thus there was no way to match between siblings.
 - **Manual: Unable to Match**: Children within a household that potentially was a DD and nonDD pair, however, they were not recruited. Either due to not having another pair available in the household (Ex: 1 DD and 3 noDD siblings) or because two non-related children are living in the same HOH.
-- **Manual: Matched Half-Siblings**: Children that we can recruit into the study if we struggle to find full sibling pairs (none have been given an ID yet).
-- **Manual: Matched Siblings**: Current DD and noDD sibling pairs that have been recruited.
-
-
+- **Manual: Matched Half-Siblings**: Matched half-sibling pairs (Given IDs; Began March 21, 2025)
+- **Manual: Matched Cousins**: Matched cousin pairs (Given IDs; Began May 8th, 2025)
+- **Manual: Matched Siblings**: Matched sibling pairs that have been recruited (Given IDs)
 
 
 ```{r print our the main table, echo = FALSE}
