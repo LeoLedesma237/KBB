@@ -78,6 +78,10 @@ CFM5_17.removed.variables <- CFM5_17.uncleaned %>%
          EN11 = `_35_Ipenzi_eeli_lyak_o_wakalivwide_ampeyo`,
          EN12 = `_36_Ipenzi_eeli_lyak_e_mumalo_kucibbadela`)
 
+# Quick name cleaning (removes "\r\n" in the name)
+CFM5_17.removed.variables <- CFM5_17.removed.variables %>%
+  mutate(Child_First_Name = trimws(gsub("[[:space:]\r\n]+", " ", Child_First_Name)))
+
 
 # Cleaning variables with date data 
 CFM5_17.cleaned.date <- CFM5_17.removed.variables %>%
