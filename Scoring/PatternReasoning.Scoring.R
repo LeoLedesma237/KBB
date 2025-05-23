@@ -28,6 +28,73 @@ source("Scoring/scoring_functions/IDError_FUNCTION.R")
 PR_Notes <-check_id_errors("Pattern Reasoning",
                            PatternReasoning$Child_ID)
 
+
+# Create a function to score the bonus points
+time_scoring_fun <- function(item, time, threshold1) {
+  # return NA if either is missing
+  na_idx <- is.na(item) | is.na(time)
+  
+  # scoring ifelse statement
+  score <- ifelse(item != 0, 
+                  ifelse(time <= threshold1, 2, item), item)
+  score[na_idx] <- NA
+  
+  # if either field contains 777 or 888, return that code instead
+  special_idx <- (item %in% c(777,888)) | (time %in% c(777,888))
+  score[special_idx] <- ifelse(
+    item[special_idx] %in% c(777,888),
+    item[special_idx],
+    time[special_idx]
+  )
+  
+  score
+}
+
+
+##
+##### Part 1: Scoring items 10-36 in Pattern Reasoning (one time threshold)
+##
+# If an item was correctly answered less than the time threshold then it gets a bonus point
+# Set parameters for function1 scoring
+items1 <- select(PatternReasoning, c(paste0("Iterm_",10:11),
+                                     "Item_12",
+                                     paste0("Iterm_",13:36)))
+times1 <- select(PatternReasoning, c(paste0("_",10:15,"a_Time"),
+                                     "_16a_TIme",
+                                     paste0("_",17:20,"a_Time"),
+                                     "_21a_Time_in_seconds",
+                                     "_22a_Time",
+                                     "_23a_Time_in_seconds",
+                                     paste0("_",24:28,"a_Time"),
+                                     "_29a_time",
+                                     "_30a_Time",
+                                     "_31_Time",
+                                     paste0("_",32:35,"a_Time"),
+                                     "_38a_Time"
+                                     ))
+threshold1 <- c(rep(10,4), rep(15,10), rep(20,2), rep(25,2), rep(20,3), 25, 30, rep(45,4))
+
+# Score each item based on whether they met the bonus threshold
+scores_10_36 <- mapply(
+  FUN = time_scoring_fun,
+  item = items1,
+  time = times1,
+  threshold1 = threshold1
+)
+
+# minor data cleaning
+scores_10_36 <- sapply(data.frame(scores_10_36), function(x) as.numeric(x)) %>% data.frame()
+names(scores_10_36) <- names(items1)
+
+##
+##### Part 2: Reconstructing Pattern Reasoning dataset to have updated scores
+##
+
+
+# Overwrite the original item scores with these updated ones
+PatternReasoning[ , names(scores_10_36)] <- scores_10_36[ , names(scores_10_36)]
+
+
 # Select Vars of Interest
 Front <- PatternReasoning %>%
   select(Child_ID,
