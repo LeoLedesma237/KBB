@@ -1,0 +1,186 @@
+---
+title: "KBB NIHRPPAnnualReport"
+author: "Leandro Ledesma"
+date: "2025-05-22"
+output: html_document
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+library(psych)
+```
+
+```{r load in the data and merging}
+# Set the working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener")
+
+# Load in the binded data
+Binded.data <- read_excel("All Children.xlsx")
+
+# Set working directory again
+setwd("~/KBB/Data/FINAL_DS/Screener/Matched_Siblings")
+
+# Load the recruited children (children given IDs)
+dat <- read_excel("Final_ID_Tracker.xlsx")
+
+# Keep variables of interest 
+Binded.data2 <- Binded.data %>%
+  select(Child_ID, KBB_CFM_DD_type, Screener.Type) %>%
+  mutate(KBB_CFM_DD_status = ifelse(is.na(KBB_CFM_DD_type),"No","Yes"))
+
+# Merge the datasets together
+dat2 <- dat %>%
+  left_join(Binded.data2, by = "Child_ID")
+```
+
+Here we will be running some descriptives on our dataset to update the tables for the NIHRPPRAnnualReport. The dataset chosen is from the Final_ID_tracker since that contains information from the recruited children. However, to update the numbers from Figure 1, use the bi-weekly report!!
+
+From the IDs that were given, we need to remove any erroneous ones from the dataset
+
+```{r remove bad IDS, include = T}
+dat2 <- dat2 %>%
+  filter(!Overall.Summary %in% c("Control for Excluded Child",
+                                "Control for Incorrect Screener",
+                                "Recruited With Incorrect Screener",
+                                "Should have been Excluded"))
+
+```
+
+
+Qaulity Control Measures
+```{r sample breakdown by relationship type}
+paste0("There are ", nrow(dat2), " children in this dataset with IDs- aka recruited children")
+
+addmargins(table(dat2$Overall.Summary)) %>%
+  kbl(caption = "Recruited children by paired group") %>%
+  kable_minimal(full_width = F)
+
+
+table(dat2$KBB_DD_status) %>%
+  kbl(caption = "Total DD vs non-DD") %>%
+  kable_minimal(full_width = F)
+
+
+table(dat2$Overall.Summary, dat2$KBB_DD_status) %>%
+  kbl(caption = "Total DD vs non-DD by group pari") %>%
+  kable_minimal(full_width = F)
+
+```
+
+
+
+```{r producing first part of table 2}
+rbind(describe(dat2$Child_age), 
+do.call(rbind, describeBy(dat2$Child_age, dat2$Child_Gender))) %>%
+  round(1) %>%
+  data.frame() %>%
+  transmute(n, 
+            Age_range = paste0(min,"-",max), 
+            Mea_age_sd = paste0(mean,"(",sd,")")) %>%
+  select(N = n, Age_range, Mea_age_sd) %>%
+  kbl(caption = "All recruited children count + Age") %>%
+  kable_minimal(full_width = F)
+  
+Probands <- filter(dat2, KBB_DD_status == "Yes")
+
+rbind(describe(Probands$Child_age), 
+do.call(rbind, describeBy(Probands$Child_age, Probands$Child_Gender))) %>%
+  round(1) %>%
+  data.frame() %>%
+  transmute(n, 
+            Age_range = paste0(min,"-",max), 
+            Mea_age_sd = paste0(mean,"(",sd,")")) %>%
+  select(N = n, Age_range, Mea_age_sd) %>%
+  kbl(caption = "All proband children (including epilspey only) count + Age") %>%
+  kable_minimal(full_width = F)
+
+
+```
+
+This next section is for the left side of the second part of table 2 (CFM Proband only)
+```{r the age descriptives by screener type}
+CFM2_4 <- filter(dat2, Screener.Type == "CFM2_4" & KBB_CFM_DD_status == "Yes")
+CFM5_18 <- filter(dat2, Screener.Type == "CFM5_17" & KBB_CFM_DD_status == "Yes")
+
+rbind(describe(CFM2_4$Child_age), 
+do.call(rbind, describeBy(CFM2_4$Child_age, CFM2_4$Child_Gender))) %>%
+  round(1) %>%
+  data.frame() %>%
+  transmute(n, 
+            Age_range = paste0(min,"-",max), 
+            Mea_age_sd = paste0(mean,"(",sd,")")) %>%
+  select(N = n, Age_range, Mea_age_sd) %>%
+  kbl(caption = "CFM2-4 children count + Age") %>%
+  kable_minimal(full_width = F)
+
+
+rbind(describe(CFM5_18$Child_age), 
+do.call(rbind, describeBy(CFM5_18$Child_age, CFM5_18$Child_Gender))) %>%
+  round(1) %>%
+  data.frame() %>%
+  transmute(n, 
+            Age_range = paste0(min,"-",max), 
+            Mea_age_sd = paste0(mean,"(",sd,")")) %>%
+  select(N = n, Age_range, Mea_age_sd) %>%
+  kbl(caption = "CFM5-17 children count + Age") %>%
+  kable_minimal(full_width = F)
+
+
+```
+
+This is for the right side of the second half of Table2
+
+```{r frequency of number of difficulties by screener type and sex}
+CFM2_4$Diff_count <- sapply(str_split(CFM2_4$KBB_CFM_DD_type, "; "), function(x) length(x))
+CFM5_18$Diff_count <- sapply(str_split(CFM5_18$KBB_CFM_DD_type, "; "), function(x) length(x))
+
+rbind(
+table(CFM2_4$Diff_count),
+t(table(CFM2_4$Diff_count, CFM2_4$Child_Gender))
+) %>%
+  kbl(caption = "CFM2-4 Number of At least some difficulties") %>%
+  kable_minimal(full_width = F)
+
+
+table(CFM2_4$Child_Gender, CFM2_4$Epilepsy) %>%
+  kbl(caption = "CFM2-4 Epilepsy Count") %>%
+  kable_minimal(full_width = F)
+  
+
+rbind(
+table(CFM5_18$Diff_count),
+t(table(CFM5_18$Diff_count, CFM5_18$Child_Gender))
+) %>%
+  kbl(caption = "CFM5_18 Number of At least some difficulties") %>%
+  kable_minimal(full_width = F)
+
+```
+
+Epilepsy Count information from recruited children
+```{r create tables that inform us of the epilspey counts}
+# KBB_CFM_DD_status = means are they DD stricly from CFM screening!
+dat2 <- dat2 %>%
+  mutate(Epilepsy_CFM = case_when(
+    Epilepsy == "Yes" & KBB_CFM_DD_status == "Yes" ~ "CFM and Epilepsy",
+    Epilepsy == "No" & KBB_CFM_DD_status == "Yes" ~ "CFM Only",
+    Epilepsy == "Yes" & KBB_CFM_DD_status == "No" ~ "Epilepsy Only",
+    Epilepsy == "No" & KBB_CFM_DD_status == "No" ~ "NoDD",
+    TRUE ~ "Error"
+  ))
+
+addmargins(table(dat2$Epilepsy_CFM, dat2$Child_Gender)) %>%
+  kbl(caption = "Frequency of CFM DD and Epilepsy by Sex (CFM5-17") %>%
+  kable_minimal(full_width = F)
+
+```
