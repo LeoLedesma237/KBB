@@ -9,7 +9,6 @@ BRSR <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/BRIEF2_SF.x
 LD <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/LettrDig.xlsx"))
 PR <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/PatternReas.xlsx"))
 PD <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/PhysicalData.xlsx"))
-PSC <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/PSC.xlsx"))
 RV <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/RecepVocab.xlsx"))
 TR <-  read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/Triangles.xlsx"))
 
@@ -17,6 +16,7 @@ TR <-  read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Children/Triangles.xl
 BRPF <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Adults/BRIEF2_Parent.xlsx"))
 CBC3_6  <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Adults/CBC_3_6.xlsx"))
 CBC6_18 <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Adults/CBC_6_18.xlsx"))
+PSC <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Adults/PSC.xlsx"))
 
 # Load Epilepsy Data
 Demo <- read_excel(paste0(DataLocation,"FINAL_DS/Screener/Matched_Siblings/Final_ID_Tracker.xlsx"))

@@ -10,7 +10,7 @@ library(stringr) # str_count()
 PSC <- read_excel(paste0(DataLocation,"RAW_DATA/Behavioral/Adults/PSC_Raw.xlsx"))
 
 # Create a save pathway
-save.pathway_PSC <- paste(DataLocation,"FINAL_DS/Behavioral/Children/PSC.xlsx", sep="")
+save.pathway_PSC <- paste(DataLocation,"FINAL_DS/Behavioral/Adults/PSC.xlsx", sep="")
 
 # Create a save pathway for Notes
 save.pathway.notes <-  paste(DataLocation,"REPORTS/Individual/PSC.csv", sep="")

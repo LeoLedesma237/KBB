@@ -51,7 +51,7 @@ Triangles7_18 <- filter(Triangles_LettrDig3, Age >= 7)
 source("Scoring/scoring_functions/Scoring_triangles_7_18_FUNCTION.R")
 
 ##
-##### Part 1: Scoring items 11-16 in Triangles_7_18 (one time threshol)
+##### Part 1: Scoring items 11-16 in Triangles_7_18 (one time threshold)
 ##
 # Set parameters for function1 scoring
 items1 <- select(Triangles7_18, paste0("_",11:16))
