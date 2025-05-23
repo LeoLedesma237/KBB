@@ -278,9 +278,9 @@ RV2_age_df2 <- RV2_age_df %>%
          Age = as.numeric(Age),
          Age_Group = case_when(
     Age < 5 ~ "Group (2-4)",
-    Age >= 5 & Age < 8 ~ "Group (5-7)",
-    Age >= 8 & Age < 11 ~ "Group (8-10)",
-    Age >= 11 & Age < 15 ~ "Group (11-14)",
+    Age >= 5 & Age < 7 ~ "Group (5-6)",
+    Age >= 7 & Age < 9 ~ "Group (7-8)",
+    Age >= 9 & Age < 15 ~ "Group (9-14)",
     Age >= 15 ~ "Group (15-19)",
     TRUE ~ "ERROR"
   )) %>%
@@ -331,15 +331,17 @@ PR2_age_df2 <- PR2_age_df %>%
   mutate(Age = as.character(Age),
          Age = as.numeric(Age),
          Age_Group = case_when(
-    Age < 9 ~ "Group (4-8)",
-    Age >= 8 & Age < 13 ~ "Group (9-12)",
-    Age >= 13 & Age < 16 ~ "Group (13-15)",
-    Age >= 16 ~ "Group (16-19)",
+    Age < 7 ~ "Group (4-6)",
+    Age >= 7 & Age < 9 ~ "Group (7-8)",
+    Age >= 9 & Age < 12 ~ "Group (9-11)",
+    Age >= 12 & Age < 15 ~ "Group (12-14)",
+    Age >= 15 ~ "Group (15-18)",
     TRUE ~ "ERROR"
   )) %>%
   group_by(Age_Group) %>%
   mutate(Group_n = sum(Frequency)) %>%
-  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"))
+  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"),
+         GRM_Qualified = ifelse(Group_n >= 200, "Yes", "No"))
 
 # Print as a table
 PR2_age_df2 %>%
@@ -384,21 +386,24 @@ TR2_age_df2 <- TR2_age_df %>%
          Age = as.numeric(Age),
          Age_Group = case_when(
     Age < 5 ~ "Group (2-4)",
-    Age >= 5 & Age < 8 ~ "Group (5-7)",
-    Age >= 8 & Age < 11 ~ "Group (8-10)",
-    Age >= 11 & Age < 15 ~ "Group (11-14)",
-    Age >= 15 ~ "Group (15-19)",
+    Age >= 5 & Age < 7 ~ "Group (5-6)",
+    Age >= 7 & Age < 9 ~ "Group (7-8)",
+    Age >= 9 & Age < 14 ~ "Group (9-13)",
+    Age >= 14 ~ "Group (14-19)",
     TRUE ~ "ERROR"
   )) %>%
   group_by(Age_Group) %>%
   mutate(Group_n = sum(Frequency)) %>%
-  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"))
+  mutate(`2PL_Qualified` = ifelse(Group_n >= 150, "Yes", "No"),
+         GRM_Qualified = ifelse(Group_n >= 200, "Yes", "No"))
 
 # Print as a table
 TR2_age_df2 %>%
-  kbl(caption = "Pattern Reasoning Age Frequency and Sample Size by Age Group",
+  kbl(caption = "Triangles Age Frequency and Sample Size by Age Group",
       align = c("c", "c", "c", "c", "c")) %>%
   kable_classic(full_width = F, html_font = "Cambria")
+
+
 
 ```
 
@@ -437,10 +442,10 @@ LD2_age_df2 <- LD2_age_df %>%
          Age = as.numeric(Age),
          Age_Group = case_when(
     Age < 5 ~ "Group (2-4)",
-    Age >= 5 & Age < 8 ~ "Group (5-7)",
-    Age >= 8 & Age < 11 ~ "Group (8-10)",
-    Age >= 11 & Age < 15 ~ "Group (11-14)",
-    Age >= 15 ~ "Group (15-19)",
+    Age >= 5 & Age < 7 ~ "Group (5-6)",
+    Age >= 7 & Age < 9 ~ "Group (7-8)",
+    Age >= 9 & Age < 13 ~ "Group (9-12)",
+    Age >= 13 ~ "Group (13-19)",
     TRUE ~ "ERROR"
   )) %>%
   group_by(Age_Group) %>%
