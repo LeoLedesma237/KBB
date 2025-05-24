@@ -53,7 +53,7 @@ Items_Raw2 <- sapply(Items_Raw, function(x) as.numeric(x)) %>% cbind() %>% data.
 emo_reac <- c(21, 46, 51, 79, 82, 83, 92, 97, 99)
 anx_depr <- c(10, 33, 37, 43, 47, 68, 87, 90)
 som_comp <- c(1, 7, 12, 19, 24, 39, 45, 52, 78, 86, 93)
-withdr <- c(2, 4, 23, 62, 67, 70, 71, 96)
+withdr <- c(2, 4, 23, 62, 67, 70, 71, 98)
 
 # Sleep its own thing
 sleep_prob <- c(22, 38, 48, 64, 74, 84, 94)
