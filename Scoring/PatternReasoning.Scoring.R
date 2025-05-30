@@ -131,6 +131,10 @@ names(All_Items) <- sapply(All_Items_Var1, function(x)
   }
 )
 
+# Change the datasets to only include numeric responses
+Items <- data.frame(sapply(Items, function(x) as.numeric(x)))
+All_Items <- data.frame(sapply(All_Items, function(x) as.numeric(x)))
+
 
 # Call the function to score Pattern Reasoning
 source("Scoring/scoring_functions/Scoring_FUNCTION1.R")
