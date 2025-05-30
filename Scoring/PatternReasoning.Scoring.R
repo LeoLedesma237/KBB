@@ -59,6 +59,7 @@ time_scoring_fun <- function(item, time, threshold1) {
 items1 <- select(PatternReasoning, c(paste0("Iterm_",10:11),
                                      "Item_12",
                                      paste0("Iterm_",13:36)))
+
 times1 <- select(PatternReasoning, c(paste0("_",10:15,"a_Time"),
                                      "_16a_TIme",
                                      paste0("_",17:20,"a_Time"),
@@ -110,7 +111,9 @@ Items <- PatternReasoning %>%
 # Scored items and their times
 All_Items <- PatternReasoning %>%
   select(Iterm_1:`_38a_Time`)
-  
+
+# Change the name of item question
+names(All_Items)[names(All_Items) == "_31_Time"] <- "_31a_Time"
 
 # Rename Items
 names(Items) <- paste0("PR_",1:length(Items))
