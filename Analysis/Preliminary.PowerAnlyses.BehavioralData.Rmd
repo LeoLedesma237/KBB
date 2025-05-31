@@ -1,0 +1,594 @@
+---
+title: "Preliminary Power Analyses on Behavioral Data"
+author: "Leandro Ledesma"
+date: "2025-05-30"
+output: html_document
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(psych)
+library(lavaan)
+library(kableExtra)
+library(lme4)
+library(lmerTest)
+library(effectsize)
+library(simr)
+```
+
+## Load in the data
+- The IDs with DD information
+- Demographic information
+- The scored ZAT scores
+- The scored Vineland-II
+
+```{r load in the data}
+# Set working directory
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS")
+
+# Load in the data
+IDs <- read_excel("Screener/Matched_Siblings/Final_ID_Tracker.xlsx")
+demo <- read_excel("Demographics/Demographics.xlsx")
+ZAT <- read_excel("Behavioral/Children/ZAT.xlsx")
+VinelandII <- read_excel("Behavioral/Adults/VinelandII.xlsx")
+DLS <- read_excel("Behavioral/Children/LettrDig.xlsx")
+PR <- read_excel("Behavioral/Children/PatternReas.xlsx")
+TR <- read_excel("Behavioral/Children/Triangles.xlsx")
+BRIEF_P <-  read_excel("Behavioral/Adults/BRIEF2_Parent.xlsx")
+
+# Drop duplicates from demo if any
+demo_dup <- demo$Child_ID[duplicated(demo$Child_ID)]
+demo <- filter(demo, !Child_ID %in% demo_dup)
+
+# Drop any NAs from the Child_ID
+IDs <- drop_na(IDs, Child_ID)
+demo <- drop_na(demo, Child_ID)
+ZAT <- drop_na(ZAT, Child_ID)
+VinelandII <- drop_na(VinelandII, Child_ID)
+DLS <- drop_na(DLS, Child_ID)
+PR <- drop_na(PR, Child_ID)
+TR <- drop_na(TR, Child_ID)
+BRIEF_P <- drop_na(BRIEF_P, Child_ID)
+
+# Some data cleaning
+IDs$Child_ID <- as.numeric(IDs$Child_ID)
+IDs$HOH_ID_num <- as.numeric(factor(IDs$HOH_ID))
+ZAT <- filter(ZAT, !Child_ID %in% c(463106, 6375))
+VinelandII <- filter(VinelandII, !Child_ID %in% c(10444))
+PR <- filter(PR, !Child_ID %in% c(1472))
+BRIEF_P <- filter(BRIEF_P, !Child_ID %in% c(0, 9474))
+demo <- mutate(demo, Age_C = c(scale(Age)))
+
+
+# Select vars of interest for each dataset
+IDs <- select(IDs, Child_ID = ID, HOH_ID,HOH_ID_num, KBB_DD_status)
+demo <- select(demo, Child_ID, Sex, Age, Age_C)
+ZAT <- select(ZAT, Child_ID, scored_RR:scored_P)
+VinelandII <- select(VinelandII, Child_ID, scored_CommR:scored_SCS)
+
+# Join the datasets into one for ZAT
+full_ZAT <- ZAT %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+# Join the datasets into one for Vineland-II
+full_VinelandII <- VinelandII %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+# Join the datasets into one for DLS
+full_DLS <- DLS %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+# Join the datasets into one for PR
+full_PR <- PR %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+# Join the datasets into one for TR
+full_TR <- TR %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+# Join the datasets into one for BRIEF_P
+full_BRIEF_P <- BRIEF_P %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+
+# Generate composite scores
+full_ZAT <- mutate(full_ZAT, ZAT_composite = scored_RR + scored_RC + scored_M + scored_P)
+full_VinelandII <- mutate(full_VinelandII, VinelandII_composite = scored_CommR + scored_CommE + scored_DLSP + scored_DLSD + scored_DLSC + scored_SI + scored_SPI + scored_SCS)
+
+# Quickly investigate sample size
+nrow(full_ZAT)
+nrow(full_VinelandII)
+nrow(full_DLS)
+nrow(full_PR)
+nrow(full_TR)
+nrow(full_BRIEF_P)
+
+length(unique(full_ZAT$HOH_ID))
+length(unique(full_VinelandII$HOH_ID))
+length(unique(full_DLS$HOH_ID))
+length(unique(full_PR$HOH_ID))
+length(unique(full_TR$HOH_ID))
+length(unique(full_BRIEF_P$HOH_ID))
+```
+
+
+## Visulize Unadjusted Predictors of the ZAT
+
+
+```{r visualizing the ZAT Subtest}
+# Visualize the effect of DD Status on a Composite score of the ZAT
+full_ZAT %>%
+  ggplot(aes(x = KBB_DD_status, y = ZAT_composite)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on ZAT 4 Subtest Composite Score")
+
+
+# Visualize the effect of DD Status on the 4 ZAT subtests
+full_ZAT %>%
+  select(Child_ID, KBB_DD_status, scored_RR:scored_P) %>%
+  pivot_longer(-c(Child_ID, KBB_DD_status),
+               names_to = "Subtests",
+               values_to = "Z-Scores") %>%
+  mutate(Subtests = gsub("scored_","",Subtests)) %>%
+  group_by(Subtests) %>%
+  mutate(z_scores = c(scale(`Z-Scores`))) %>%
+  ggplot(aes(x = KBB_DD_status, y = z_scores)) +
+  facet_grid(~Subtests) +
+  geom_violin() +
+  geom_jitter(width = .2, size = .5) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on each ZAT 4 Subtest Scores")
+
+# Visualize potential effects of household (random effects)
+full_ZAT %>%
+  group_by(HOH_ID) %>%
+  summarize(mean_ZAT_composite = mean(ZAT_composite)) %>%
+  filter(!is.na(mean_ZAT_composite)) %>%
+  mutate(HOH_ID = forcats::fct_reorder(HOH_ID, mean_ZAT_composite)) %>%
+  ggplot(aes(x = mean_ZAT_composite, y = HOH_ID)) +
+  geom_point(size = 1) +
+  labs(x = "Household Mean Score",
+       y = "Household (ordered)",
+       title = "Unadjusted Household Means of Child Scores (ZAT)\n(These are 356 HOH)") +
+  theme_classic()
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_ZAT <- full_ZAT %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID))
+
+table(full_ZAT$HOH_num_Children, full_ZAT$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children ZAT data was collected\nfrom (ZAT data is collected from ages 7-18)")
+
+```
+
+
+
+
+## Visulize Unadjusted Predictors of the Vineland-II
+```{r visualizing the VinelandII}
+full_VinelandII %>%
+  ggplot(aes(x = KBB_DD_status, y = VinelandII_composite)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on the Vineland-II 8 Subtest Composite Score")
+
+
+full_VinelandII %>%
+  select(Child_ID, KBB_DD_status, scored_CommR:scored_SCS) %>%
+  pivot_longer(-c(Child_ID, KBB_DD_status),
+               names_to = "Subtests",
+               values_to = "Sum of Reponses") %>%
+  mutate(Subtests = gsub("scored_","",Subtests)) %>%
+  ggplot(aes(x = KBB_DD_status, y = `Sum of Reponses`)) +
+  facet_grid(~Subtests) +
+  geom_boxplot() +
+  geom_jitter(width = .2, size = .5) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 3.5, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on each Vineland-II 8 Subtest Scores")
+
+
+# Visualize potential effects of household (random effects)
+full_VinelandII %>%
+  group_by(HOH_ID) %>%
+  summarize(mean_VinelandII_composite = mean(VinelandII_composite)) %>%
+  filter(!is.na(mean_VinelandII_composite)) %>%
+  mutate(HOH_ID = forcats::fct_reorder(HOH_ID, mean_VinelandII_composite)) %>%
+  ggplot(aes(x = mean_VinelandII_composite, y = HOH_ID)) +
+  geom_point(size = 1) +
+  labs(x = "Household Mean Score",
+       y = "Household (ordered)",
+       title = "Unadjusted Household Means of Child Scores (VinelandII)\n(These are 360 HOH)") +
+  theme_classic()
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_VinelandII <- full_VinelandII %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID))
+
+table(full_VinelandII$HOH_num_Children, full_VinelandII$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children Vineland-II data was\ncollected from (Vineland-II data is collected from 3-18)")
+```
+
+
+## Visulize Unadjusted Predictors of the Digit and Letter Span
+
+```{r visualizing the Digit and Letter Span}
+full_DLS %>%
+  ggplot(aes(x = KBB_DD_status, y = LetDig_Performance)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on the Letter & Dig 4 Subtest Composite Score")
+
+
+full_DLS %>%
+  select(Child_ID, KBB_DD_status, NF_Performance, NB_Performance, LF_Performance, LB_Performance) %>%
+  pivot_longer(-c(Child_ID, KBB_DD_status),
+               names_to = "Subtests",
+               values_to = "Sum of Reponses") %>%
+  mutate(Subtests = gsub("scored_","",Subtests)) %>%
+  ggplot(aes(x = KBB_DD_status, y = `Sum of Reponses`)) +
+  facet_grid(~Subtests) +
+  geom_boxplot() +
+  geom_jitter(width = .2, size = .5) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 3.5, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on each Letter & Dig 4 Subtest Scores")
+
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_DLS <- full_DLS %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID))
+
+table(full_DLS$HOH_num_Children, full_DLS$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children Let & Dig data was\ncollected from (Letter and Dig data is collected from 3-18)")
+```
+
+## Visulize Unadjusted Predictors of Pattern Reasoning
+
+```{r visualizing Pattern Reasoning}
+full_PR %>%
+  ggplot(aes(x = KBB_DD_status, y = PR_Performance)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on the Pattern Reasoning Performance")
+
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_PR <- full_PR %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID))
+
+table(full_PR$HOH_num_Children, full_PR$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children Pattern Reasoning was\ncollected from (Pattern Reasoning data is collected from 5-18)")
+```
+
+## Visulize Unadjusted Predictors of Triangles
+
+```{r visualizing Triangles}
+full_TR %>%
+  ggplot(aes(x = KBB_DD_status, y = TR_Performance)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on Triangles Performance")
+
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_TR <- full_TR %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID))
+
+table(full_TR$HOH_num_Children, full_TR$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children Triangles was\ncollected from (Triangles data is collected from 3-18)")
+```
+
+## Visulize Unadjusted Predictors of BRIEF2 Parent Form
+
+```{r visualizing BRIEF2}
+full_BRIEF_P %>%
+  ggplot(aes(x = KBB_DD_status, y = GEC)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on BRIEF-2")
+
+
+full_BRIEF_P %>%
+  ungroup() %>%
+  select(Child_ID, KBB_DD_status, Emotional_Control:Working_Memory) %>%
+  pivot_longer(-c(Child_ID, KBB_DD_status),
+               names_to = "Subtests",
+               values_to = "Sum of Reponses") %>%
+  mutate(Subtests = gsub("scored_","",Subtests)) %>%
+  ggplot(aes(x = KBB_DD_status, y = `Sum of Reponses`)) +
+  facet_grid(~Subtests) +
+  geom_boxplot() +
+  geom_jitter(width = .2, size = .5) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 3.5, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on each BRIEF2 _Parent Scales")
+
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_BRIEF_P <- full_BRIEF_P %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID))
+
+table(full_BRIEF_P$HOH_num_Children, full_BRIEF_P$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children BRIEF-2 Parent was\ncollected from (BRIEF-2 Parent data is collected from 5-18)")
+```
+
+
+
+## Analysis of the ZAT
+
+```{r analyzing the ZAT}
+# Run an empty model
+m0_zat <- lmer(ZAT_composite ~ (1 | HOH_ID_num), data = full_ZAT)
+performance::icc(m0_zat)
+summary(m0_zat)
+
+# Run the full model
+m1_zat <- lmer(ZAT_composite ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID_num), data = full_ZAT)
+summary(m1_zat)
+
+# Run a model with just KBB_DD_Status
+m2_zat <- lmer(ZAT_composite ~  KBB_DD_status + (1 | HOH_ID_num), data = full_ZAT)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(-2.57, 404.714) # Weak effect size 
+
+# Run a power analysis
+powerSim(m2_zat)
+
+# Extend the model to 540 clusters (adjust as needed)
+cluster_n = 540
+m3_zat <- extend(m2_zat, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+zat_pc <- powerCurve(m3_zat, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500, 520, 540), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(zat_pc)
+plot(zat_pc)
+```
+
+## Analysis of the Vineland-II
+
+```{r analyzing the Vineland}
+# Run an empty model
+m0_vin <- lmer(VinelandII_composite ~ (1 | HOH_ID), data = full_VinelandII)
+performance::icc(m0_vin)
+summary(m0_vin)
+
+# Run the full model
+m1_vin <- lmer(VinelandII_composite ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_VinelandII)
+summary(m1_vin)
+
+# Run a model with just KBB_DD_Status
+m2_vin <- lmer(VinelandII_composite ~  KBB_DD_status + (1 | HOH_ID), data = full_VinelandII)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(1.055, 460.364) # Inaccurate please address 
+
+# Run a power analysis
+powerSim(m2_vin)
+
+# Extend the model to 500 clusters (adjust as needed)
+cluster_n = 500
+m3_vin <- extend(m2_vin, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+vin_pc <- powerCurve(m3_vin, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(vin_pc)
+plot(vin_pc)
+```
+
+
+## Analysis of the Letter and Dig Span
+
+```{r analyzing the LDS}
+# Run an empty model
+m0_dls <- lmer(LetDig_Performance ~ (1 | HOH_ID), data = full_DLS)
+performance::icc(m0_dls)
+summary(m0_dls)
+
+# Run the full model
+m1_dls <- lmer(LetDig_Performance ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_DLS)
+summary(m1_dls)
+
+# Run a model with just KBB_DD_Status
+m2_dls <- lmer(LetDig_Performance ~  KBB_DD_status + (1 | HOH_ID), data = full_DLS)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(0.874, 492.2633) # Inaccurate please address 
+
+# Run a power analysis
+powerSim(m2_dls)
+
+# Extend the model to 500 clusters (adjust as needed)
+cluster_n = 500
+m3_dls <- extend(m2_dls, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+dls_pc <- powerCurve(m3_dls, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(dls_pc)
+plot(dls_pc)
+```
+
+
+## Analysis of Pattern Reasoning
+
+```{r analyzing the PR}
+# Run an empty model
+m0_pr <- lmer(PR_Performance ~ (1 | HOH_ID), data = full_PR)
+performance::icc(m0_pr)
+summary(m0_pr)
+
+# Run the full model
+m1_pr <- lmer(PR_Performance ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_PR)
+summary(m1_pr)
+
+# Run a model with just KBB_DD_Status
+m2_pr <- lmer(PR_Performance ~  KBB_DD_status + (1 | HOH_ID), data = full_PR)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(-0.685, 433.6387) 
+
+# Run a power analysis
+powerSim(m2_pr)
+
+# Extend the model to 500 clusters (adjust as needed)
+cluster_n = 500
+m3_pr <- extend(m2_pr, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+pr_pc <- powerCurve(m3_pr, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(pr_pc)
+plot(pr_pc)
+```
+
+## Analysis of Triangles
+
+```{r analyzing Triangles}
+# Run an empty model
+m0_tr <- lmer(TR_Performance ~ (1 | HOH_ID), data = full_TR)
+performance::icc(m0_tr)
+summary(m0_tr)
+
+# Run the full model
+m1_tr <- lmer(TR_Performance ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_TR)
+summary(m1_tr)
+
+# Run a model with just KBB_DD_Status
+m2_tr <- lmer(TR_Performance ~  KBB_DD_status + (1 | HOH_ID), data = full_TR)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(1.471, 448.6302)  
+
+# Run a power analysis
+powerSim(m2_tr)
+
+# Extend the model to 500 clusters (adjust as needed)
+cluster_n = 500
+m3_tr <- extend(m2_tr, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+tr_pc <- powerCurve(m3_tr, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(tr_pc)
+plot(tr_pc)
+```
+## Analysis of BRIEF2 Parent
+
+```{r analyzing BRIEF2}
+# Run an empty model
+m0_brp <- lmer(GEC ~ (1 | HOH_ID), data = full_BRIEF_P)
+performance::icc(m0_brp)
+summary(m0_brp)
+
+# Run the full model
+m1_brp <- lmer(GEC ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_BRIEF_P)
+summary(m1_brp)
+
+# Run a model with just KBB_DD_Status
+m2_brp <- lmer(GEC ~  KBB_DD_status + (1 | HOH_ID), data = full_BRIEF_P)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(4.375, 441.4660) 
+
+# Run a power analysis
+powerSim(m2_brp)
+
+# Extend the model to 500 clusters (adjust as needed)
+cluster_n = 500
+m3_brp <- extend(m2_brp, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+m3_brp <- powerCurve(m3_brp, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(m3_brp)
+plot(m3_brp)
+```
+
