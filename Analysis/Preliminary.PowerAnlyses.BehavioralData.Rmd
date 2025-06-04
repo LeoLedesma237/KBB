@@ -24,6 +24,7 @@ library(lme4)
 library(lmerTest)
 library(effectsize)
 library(simr)
+library(MCMCglmm)
 ```
 
 ## Load in the data
@@ -45,6 +46,8 @@ DLS <- read_excel("Behavioral/Children/LettrDig.xlsx")
 PR <- read_excel("Behavioral/Children/PatternReas.xlsx")
 TR <- read_excel("Behavioral/Children/Triangles.xlsx")
 BRIEF_P <-  read_excel("Behavioral/Adults/BRIEF2_Parent.xlsx")
+AA <- read_excel("Behavioral/Children/AuditoryAttention.xlsx")
+RS <- read_excel("Behavioral/Children/ResponseSet.xlsx")
 
 # Drop duplicates from demo if any
 demo_dup <- demo$Child_ID[duplicated(demo$Child_ID)]
@@ -59,6 +62,8 @@ DLS <- drop_na(DLS, Child_ID)
 PR <- drop_na(PR, Child_ID)
 TR <- drop_na(TR, Child_ID)
 BRIEF_P <- drop_na(BRIEF_P, Child_ID)
+AA <- drop_na(AA, Child_ID)
+RS <- drop_na(RS, Child_ID)
 
 # Some data cleaning
 IDs$Child_ID <- as.numeric(IDs$Child_ID)
@@ -67,6 +72,10 @@ ZAT <- filter(ZAT, !Child_ID %in% c(463106, 6375))
 VinelandII <- filter(VinelandII, !Child_ID %in% c(10444))
 PR <- filter(PR, !Child_ID %in% c(1472))
 BRIEF_P <- filter(BRIEF_P, !Child_ID %in% c(0, 9474))
+AA$Child_ID <- as.numeric(AA$Child_ID)
+AA <- filter(AA, !Child_ID %in% c(0, 9999999))
+RS$Child_ID <- as.numeric(RS$Child_ID)
+RS <- filter(RS, !Child_ID %in% c(6082))
 demo <- mutate(demo, Age_C = c(scale(Age)))
 
 
@@ -106,10 +115,56 @@ full_BRIEF_P <- BRIEF_P %>%
   left_join(demo ,by = "Child_ID") %>%
   left_join(IDs ,by = "Child_ID")
 
+# Join the datasets into one for AA
+full_AA <- AA %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
+
+# Join the datasets into one for RS
+full_RS <- RS %>%
+  left_join(demo ,by = "Child_ID") %>%
+  left_join(IDs ,by = "Child_ID")
 
 # Generate composite scores
 full_ZAT <- mutate(full_ZAT, ZAT_composite = scored_RR + scored_RC + scored_M + scored_P)
 full_VinelandII <- mutate(full_VinelandII, VinelandII_composite = scored_CommR + scored_CommE + scored_DLSP + scored_DLSD + scored_DLSC + scored_SI + scored_SPI + scored_SCS)
+
+# Average RS to remove levels of Target Type
+full_RS_avg <- full_RS %>%
+  group_by(Child_ID) %>%
+  summarise(sum_Target_Correct =sum(sum_Target_Correct),
+            sum_Commission_Num =sum(sum_Commission_Num),
+            sum_Ommission_Num = sum(sum_Ommission_Num),
+            Sum_Inhibitory_Num = sum(Sum_Inhibitory_Num)) %>%
+  unique() %>% ungroup()
+
+full_RS <- select(full_RS, 
+       - sum_Target_Correct, 
+       - sum_Commission_Num, 
+       - sum_Ommission_Num, 
+       - Sum_Inhibitory_Num, 
+       - TargetType) %>%
+  unique() %>%
+  left_join(full_RS_avg, by = "Child_ID")
+
+# Generating Composite Scores for AA and RS (We will scale and add weights)
+full_AA <- drop_na(full_AA, Child_ID)
+full_AA <- full_AA %>%
+  mutate(z_Target_Correct = c(scale(sum_Target_Correct)),
+         z_Commission_Num = c(scale(sum_Commission_Num)),
+         z_Ommission_Num = c(scale(sum_Ommission_Num)),
+         z_Inhibitory_Num = c(scale(Sum_Inhibitory_Num)),
+         z_Composite = z_Target_Correct + (-.5 * z_Commission_Num) + (-.5 * z_Ommission_Num) + (-.5 * z_Inhibitory_Num),
+         Z_Composite_corrected = z_Target_Correct + (-.5 * z_Commission_Num) + (-.5 * z_Inhibitory_Num)) # use in the model
+
+full_RS <- drop_na(full_RS, Child_ID)
+full_RS <- full_RS %>%
+  mutate(z_Target_Correct = c(scale(sum_Target_Correct)),
+         z_Commission_Num = c(scale(sum_Commission_Num)),
+         z_Ommission_Num = c(scale(sum_Ommission_Num)),
+         z_Inhibitory_Num = c(scale(Sum_Inhibitory_Num)),
+         z_Composite = z_Target_Correct + (-.5 * z_Commission_Num) + (-.5 * z_Ommission_Num) + (-.5 * z_Inhibitory_Num))
+
 
 # Quickly investigate sample size
 nrow(full_ZAT)
@@ -118,6 +173,8 @@ nrow(full_DLS)
 nrow(full_PR)
 nrow(full_TR)
 nrow(full_BRIEF_P)
+nrow(full_AA)
+nrow(full_RS)
 
 length(unique(full_ZAT$HOH_ID))
 length(unique(full_VinelandII$HOH_ID))
@@ -125,6 +182,8 @@ length(unique(full_DLS$HOH_ID))
 length(unique(full_PR$HOH_ID))
 length(unique(full_TR$HOH_ID))
 length(unique(full_BRIEF_P$HOH_ID))
+length(unique(full_AA$HOH_ID))
+length(unique(full_RS$HOH_ID))
 ```
 
 
@@ -385,6 +444,161 @@ table(full_BRIEF_P$HOH_num_Children, full_BRIEF_P$KBB_DD_status) %>%
   labs(title = "Number of Households with Varying Number of Children BRIEF-2 Parent was\ncollected from (BRIEF-2 Parent data is collected from 5-18)")
 ```
 
+## Visualizing Combined Digit Letter Span and Triangles
+```{r visualizing combined letter digit span and triangles}
+# Create z-scores for the two tasks
+full_DLS$DLS_z <- c(scale(full_DLS$LetDig_Performance))
+full_TR$TR_z <- c(scale(full_TR$TR_Performance))
+
+# Join them together by ID
+full_DLS_TR <- select(full_DLS, Child_ID, HOH_ID, HOH_ID_num, KBB_DD_status, Sex, Age_C, LetDig_Performance, DLS_z) %>%
+  left_join(
+    select(ungroup(full_TR), Child_ID, TR_Performance, TR_z), by = "Child_ID"
+  )
+
+# Drop rows with missing Z-scores
+full_DLS_TR <- drop_na(full_DLS_TR, DLS_z)
+full_DLS_TR <- drop_na(full_DLS_TR, TR_z)
+
+# Descriptives
+nrow(full_DLS_TR)
+length(unique(full_DLS_TR$HOH_ID))
+
+# Create a composite z-score
+full_DLS_TR <- mutate(full_DLS_TR, DLS_TR_z = DLS_z + TR_z)
+
+# Visualize the effect of DD status on composite DLS & TR
+full_DLS_TR %>%
+  ggplot(aes(x = KBB_DD_status, y = DLS_TR_z)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on DLS and TR Z-score Composite")
+
+```
+## Visualizing Combined Digit Letter Span, Triangles, and Pattern Reasoning
+```{r visualizing combined letter digit span triangles and pattern reasoning}
+# Create z-scores for the two tasks
+full_PR$PR_z <- c(scale(full_PR$PR_Performance))
+
+
+# Join pattern reasoning to the DLS and TR dataset
+full_DLS_TR_PR <- full_DLS_TR %>%
+  left_join(
+    select(ungroup(full_PR), Child_ID, PR_Performance, PR_z), by = "Child_ID"
+  )
+
+# Drop rows with missing Z-scores
+full_DLS_TR_PR <- drop_na(full_DLS_TR_PR, PR_z)
+
+# Descriptives
+nrow(full_DLS_TR_PR)
+length(unique(full_DLS_TR_PR$HOH_ID))
+
+# Create a composite z-score
+full_DLS_TR_PR <- mutate(full_DLS_TR_PR, DLS_TR_PR_z = DLS_TR_z + PR_z)
+
+# Visualize the effect of DD status on composite DLS & TR
+full_DLS_TR_PR %>%
+  ggplot(aes(x = KBB_DD_status, y = DLS_TR_PR_z)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on DLS, TR and PR Z-score Composite")
+
+```
+# Visualizing Auditory Attention
+
+```{r visualizing Auditory Attention Performance}
+# Visualize the effect of DD Status on a Composite score of the ZAT
+full_AA %>%
+  ggplot(aes(x = KBB_DD_status, y = z_Composite)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on Auditory Attention z-Composite Score")
+
+
+# Visualize the effect of DD Status on the 4 Scoring Criteria Standardized
+full_AA %>%
+  select(Child_ID, KBB_DD_status, z_Target_Correct:z_Inhibitory_Num) %>%
+  pivot_longer(-c(Child_ID, KBB_DD_status),
+               names_to = "Scoring_Criteria",
+               values_to = "z_scores") %>%
+  ggplot(aes(x = KBB_DD_status, y = z_scores)) +
+  facet_grid(~Scoring_Criteria) +
+  geom_violin() +
+  geom_jitter(width = .2, size = .5) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on 4 AA Standardized Scoring Criteria",
+       caption = "Correct and Omission are Redundant (r = -.99)")
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_AA <- full_AA %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID)) %>% ungroup()
+
+table(full_AA$HOH_num_Children, full_AA$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children AA data was collected\nfrom (AA data is collected from ages 5-16)")
+
+
+```
+
+# Visualizing Response Set
+
+```{r visualizing Response Set Performance}
+# Visualize the effect of DD Status on a Composite score of the ZAT
+full_RS %>%
+  ggplot(aes(x = KBB_DD_status, y = z_Composite)) +
+  geom_boxplot() +
+  geom_jitter(width = .1, size = .75) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on Response Set z-Composite Score")
+
+
+# Visualize the effect of DD Status on the 4 Scoring Criteria Standardized
+full_RS %>%
+  select(Child_ID, KBB_DD_status, z_Target_Correct:z_Inhibitory_Num) %>%
+  pivot_longer(-c(Child_ID, KBB_DD_status),
+               names_to = "Scoring_Criteria",
+               values_to = "z_scores") %>%
+  ggplot(aes(x = KBB_DD_status, y = z_scores)) +
+  facet_grid(~Scoring_Criteria) +
+  geom_violin() +
+  geom_jitter(width = .2, size = .5) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 4, fill = "red") +
+  theme_classic() +
+  labs(title = "Unadjusted effect of DD Status on 4 RS Standardized Scoring Criteria",
+       caption = "Correct and Omission are differenet (r = -.75)")
+
+# Visualize the Number of Children within each Household
+# Step 1: Count children per household by KBB_DD_status
+full_RS <- full_RS %>%
+  group_by(HOH_ID) %>%
+  mutate(HOH_num_Children = length(Child_ID)) %>% ungroup()
+
+table(full_RS$HOH_num_Children, full_RS$KBB_DD_status) %>%
+  data.frame() %>%
+  rename(Number_Children_in_HOH = Var1, KBB_DD_status = Var2, Number_of_Households = Freq) %>%
+  ggplot(aes(x = Number_Children_in_HOH, y = Number_of_Households, fill = KBB_DD_status)) +
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge2()) +
+  theme_classic() +
+  labs(title = "Number of Households with Varying Number of Children RS data was collected\nfrom (RS data is collected from ages 7-16)")
+
+
+```
+
 
 
 ## Analysis of the ZAT
@@ -478,7 +692,7 @@ t_to_eta2(0.874, 492.2633) # Inaccurate please address
 powerSim(m2_dls)
 
 # Extend the model to 500 clusters (adjust as needed)
-cluster_n = 500
+cluster_n = 2000
 m3_dls <- extend(m2_dls, along = "HOH_ID_num", n = cluster_n) 
 
 # Run powerCurve with explicit sample sizes using 'breaks'
@@ -488,6 +702,11 @@ dls_pc <- powerCurve(m3_dls, along = "HOH_ID_num", breaks = c(360, 380, 400, 420
 # Print the power curve results
 print(dls_pc)
 plot(dls_pc)
+
+# Second power curve with larger numbers
+dls_pc2 <- powerCurve(m3_dls, along = "HOH_ID_num", breaks = c(500,1000,1500,2000), 
+                     nsim = 1000)
+plot(dls_pc2)
 ```
 
 
@@ -513,7 +732,7 @@ t_to_eta2(-0.685, 433.6387)
 powerSim(m2_pr)
 
 # Extend the model to 500 clusters (adjust as needed)
-cluster_n = 500
+cluster_n = 2000
 m3_pr <- extend(m2_pr, along = "HOH_ID_num", n = cluster_n) 
 
 # Run powerCurve with explicit sample sizes using 'breaks'
@@ -523,6 +742,12 @@ pr_pc <- powerCurve(m3_pr, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 
 # Print the power curve results
 print(pr_pc)
 plot(pr_pc)
+
+# Second power curve with larger numbers
+pr_pc2 <- powerCurve(m3_pr, along = "HOH_ID_num", breaks = c(500,1000,1500,2000), 
+                     nsim = 1000)
+pr_pc2
+
 ```
 
 ## Analysis of Triangles
@@ -547,7 +772,7 @@ t_to_eta2(1.471, 448.6302)
 powerSim(m2_tr)
 
 # Extend the model to 500 clusters (adjust as needed)
-cluster_n = 500
+cluster_n = 2000
 m3_tr <- extend(m2_tr, along = "HOH_ID_num", n = cluster_n) 
 
 # Run powerCurve with explicit sample sizes using 'breaks'
@@ -557,7 +782,13 @@ tr_pc <- powerCurve(m3_tr, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 
 # Print the power curve results
 print(tr_pc)
 plot(tr_pc)
+
+# Second power curve with larger numbers
+tr_pc2 <- powerCurve(m3_tr, along = "HOH_ID_num", breaks = c(500,1000,1500,2000), 
+                     nsim = 1000)
+plot(tr_pc2)
 ```
+
 ## Analysis of BRIEF2 Parent
 
 ```{r analyzing BRIEF2}
@@ -584,11 +815,531 @@ cluster_n = 500
 m3_brp <- extend(m2_brp, along = "HOH_ID_num", n = cluster_n) 
 
 # Run powerCurve with explicit sample sizes using 'breaks'
-m3_brp <- powerCurve(m3_brp, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+brp_pc <- powerCurve(m3_brp, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
                      nsim = 1000)
 
 # Print the power curve results
-print(m3_brp)
-plot(m3_brp)
+print(brp_pc)
+plot(brp_pc)
+```
+
+## Analysis of Auditory Attention
+
+```{r analyzing Auditory Attention}
+# Run an empty model
+m0_aa <- lmer(Z_Composite_corrected ~ (1 | HOH_ID), data = full_AA)
+performance::icc(m0_aa)
+summary(m0_aa)
+
+# Run the full model (forced to remove NAs because it did not make the model run)
+full_AA_clean <- full_AA[complete.cases(full_AA[, c("Z_Composite_corrected", "Sex", "Age_C", "KBB_DD_status", "HOH_ID")]), ]
+m1_aa <- lmer(Z_Composite_corrected ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_AA_clean)
+summary(m1_aa)
+
+# Run a model with just KBB_DD_Status
+m2_aa <- lmer(Z_Composite_corrected ~  KBB_DD_status + (1 | HOH_ID), data = full_AA)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(-2.626, 402.81021) 
+
+# Run a power analysis
+powerSim(m2_aa)
+
+# Extend the model to 500 or 2000 clusters (adjust as needed)
+cluster_n = 2000
+m3_aa <- extend(m2_aa, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+aa_pc <- powerCurve(m3_aa, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(aa_pc)
+plot(aa_pc)
+
+# Second power curve with larger numbers
+aa_pc2 <- powerCurve(m3_aa, along = "HOH_ID_num", breaks = c(500,1000,1500,2000), 
+                     nsim = 1000)
+aa_pc2
+```
+
+
+
+
+
+## Analysis of Response Set
+
+```{r analyzing Response Set}
+# Run an empty model
+m0_rs <- lmer(z_Composite ~ (1 | HOH_ID), data = full_RS)
+performance::icc(m0_rs)
+summary(m0_rs)
+
+# Run the full model (forced to remove NAs because it did not make the model run)
+full_RS_clean <- full_RS[complete.cases(full_RS[, c("z_Composite", "Sex", "Age_C", "KBB_DD_status", "HOH_ID")]), ]
+m1_rs <- lmer(z_Composite ~  Sex + Age_C + KBB_DD_status + (1 | HOH_ID), data = full_RS_clean)
+summary(m1_rs)
+
+# Run a model with just KBB_DD_Status
+m2_rs <- lmer(z_Composite ~  KBB_DD_status + (1 | HOH_ID), data = full_RS)
+
+# Calculate effect sizes (limitation)
+t_to_eta2(-4.969, 327.76181) 
+
+# Run a power analysis
+powerSim(m2_rs)
+
+# Extend the model to 500 or 2000 clusters (adjust as needed)
+cluster_n = 2000
+m3_rs <- extend(m2_rs, along = "HOH_ID_num", n = cluster_n) 
+
+# Run powerCurve with explicit sample sizes using 'breaks'
+rs_pc <- powerCurve(m3_rs, along = "HOH_ID_num", breaks = c(360, 380, 400, 420, 440, 460, 480, 500), 
+                     nsim = 1000)
+
+# Print the power curve results
+print(rs_pc)
+plot(rs_pc)
+
+# Second power curve with larger numbers
+rs_pc2 <- powerCurve(m3_rs, along = "HOH_ID_num", breaks = c(500,1000,1500,2000), 
+                     nsim = 1000)
+rs_pc2
+```
+
+
+## Analysis of Auditory Attention and Response Set Using a Multivariate Model
+
+```{r analyzing Digit and Letter Span and Triangles Combined using multivariate}
+# set seed
+set.seed(123)
+
+# Combining the two datasets together
+full_AA_RS <- select(full_AA, - z_Composite) %>%
+  left_join(select(full_RS, Child_ID, z_Composite), by = "Child_ID")
+
+# Ensure the data is in wide format and NOT as a Tibble
+full_AA_RS <- as.data.frame(full_AA_RS)
+
+# Change the name of the outcome
+full_AA_RS <- full_AA_RS %>%  
+  rename(AA_z = Z_Composite_corrected,
+         RS_z = z_Composite)
+
+# Drop NA's from the outcome
+full_AA_RS <- drop_na(full_AA_RS, AA_z)
+full_AA_RS <- drop_na(full_AA_RS, RS_z)
+
+# Quick descriptives
+length(unique(full_AA_RS$Child_ID))
+length(unique(full_AA_RS$HOH_ID))
+
+# Define the priori for a multivariate model with two outcomes
+prior_bi <- list(
+  R = list(V  = diag(2), nu = 2),
+  G = list(
+    G1 = list(V = diag(2), nu = 2),
+    G2 = list(V = diag(2), nu = 2)
+  )
+)
+
+# Run the multivariate model using MCMCglmm
+m_mcmc <- MCMCglmm(
+  fixed  = cbind(AA_z, RS_z) ~ trait + trait:KBB_DD_status  - 1,
+  random = ~ us(trait):Child_ID  + us(trait):HOH_ID,
+  rcov   = ~ us(trait):units,
+  family = c("gaussian", "gaussian"),
+  data   = full_AA_RS,
+  prior  = prior_bi,
+  nitt   = 13000,
+  burnin = 3000,
+  thin   = 10
+)
+
+# Print out the results
+s <- summary(m_mcmc)
+s$Gcovariances
+s$Rcovariances
+s
+
+# Convert data into long format
+full_AA_RS_long <- full_AA_RS %>%
+  pivot_longer(cols = c(AA_z, RS_z),
+               names_to = "Attention_Task",
+               values_to = "z_score") %>%
+  as.data.frame()
+
+
+# Run the lme4 model
+mult_AA_RS <- lmer(z_score ~ Attention_Task * KBB_DD_status + (1|Child_ID) + (1|HOH_ID_num), data = full_AA_RS_long,
+               control = lmerControl(optimizer = "bobyqa"))
+
+# View the model summary
+summary(mult_AA_RS)
+
+# effect size
+t_to_eta2(-1.437, 653.2656) # ~0
+
+# Run a power analysis
+powerSim(mult_AA_RS, test = fixed("KBB_DD_statusYes", "t"), nsim = 1000)
+
+```
+
+
+
+
+
+## Analysis of Digit and Letter Span and Triangles Using a Multivariate Model
+
+```{r analyzing Digit and Letter Span and Triangles Combined using multivariate}
+# set seed
+set.seed(123)
+
+# Ensure the data is in wide format and NOT as a Tibble
+full_DLS_TR <- as.data.frame(full_DLS_TR)
+
+# Define the priori for a multivariate model with two outcomes
+prior_bi <- list(
+  R = list(V  = diag(2), nu = 2),
+  G = list(
+    G1 = list(V = diag(2), nu = 2),
+    G2 = list(V = diag(2), nu = 2)
+  )
+)
+
+# Run the multivariate model using MCMCglmm
+m_mcmc <- MCMCglmm(
+  fixed  = cbind(LetDig_Performance, TR_Performance) ~ trait + trait:KBB_DD_status  - 1,
+  random = ~ us(trait):Child_ID  + us(trait):HOH_ID,
+  rcov   = ~ us(trait):units,
+  family = c("gaussian", "gaussian"),
+  data   = full_DLS_TR,
+  prior  = prior_bi,
+  nitt   = 13000,
+  burnin = 3000,
+  thin   = 10
+)
+
+# Print out the results
+s <- summary(m_mcmc)
+s$Gcovariances
+s$Rcovariances
+s
+
+# Convert data into long format
+full_DLS_TR_long <- full_DLS_TR %>%
+  pivot_longer(cols = c(LetDig_Performance, TR_Performance ),
+               names_to = "Task",
+               values_to = "Score") %>%
+  as.data.frame()
+
+
+# Run the lme4 model
+mult_DLS_TR <- lmer(Score ~ Task * KBB_DD_status + (1|Child_ID) + (1|HOH_ID_num), data = full_DLS_TR_long,
+               control = lmerControl(optimizer = "bobyqa"))
+
+# View the model summary
+summary(mult_DLS_TR)
+
+# effect size
+t_to_eta2(0.953, 701.61451) # ~0
+
+# Run a power analysis
+powerSim(mult_DLS_TR, test = fixed("KBB_DD_statusYes", "t"), nsim = 1000)
+
+# Descriptives of the dataset
+nrow(full_DLS_TR_long)
+length(unique(full_DLS_TR_long$HOH_ID_num))
+length(unique(full_DLS_TR_long$Child_ID))
+prop.table(table(full_DLS_TR_long$KBB_DD_status))
+
+num_children_df <- full_DLS_TR_long %>%
+  filter(Task == "LetDig_Performance") %>%
+  group_by(HOH_ID) %>%
+  summarise(Children_num = length(Child_ID))
+
+round(prop.table(table(num_children_df$Children_num)),3)
+mean(num_children_df$Children_num)
+prop.table(table(full_DLS_TR_long$Task))
+
+#######
+########## Generate a simulated dataset
+######
+
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Step 1: Define parameters based on the provided model
+n_households <- 1430
+avg_children_per_hh <- 2.1
+n_children <- round(n_households * avg_children_per_hh)  # 1050 children
+n_obs <- n_children * 2  # Each child has 2 observations
+
+# Fixed effects from the model
+intercept <- 19.82549
+task_effect <- -8.38601  # TaskTR_Performance
+kbb_dd_effect <- 0.39919  # KBB_DD_statusYes
+interaction_effect <- 0.04323  # TaskTR_Performance:KBB_DD_statusYes
+
+# Variance components
+var_child <- 19.174
+var_hoh <- 7.008
+var_residual <- 14.204
+
+# Step 2: Assign number of children per household based on provided distribution
+child_dist <- c(1, 2, 3, 4, 6)
+child_probs <- c(0.147, 0.720, 0.033, 0.092, 0.008)
+children_per_hh <- sample(child_dist, size = n_households, replace = TRUE, prob = child_probs)
+
+# Verify the number of children
+total_children <- sum(children_per_hh)
+while (total_children != n_children) {
+  # Adjust if total children don't match target (1050)
+  children_per_hh <- sample(child_dist, size = n_households, replace = TRUE, prob = child_probs)
+  total_children <- sum(children_per_hh)
+}
+
+# Step 3: Create household and child IDs
+household_ids <- sprintf("HOH_%03d", 1:n_households)
+child_data <- data.frame(
+  HOH_ID_num = rep(household_ids, times = children_per_hh),
+  Child_ID = sprintf("Child_%04d", 1:n_children)
+)
+
+# Step 4: Expand to include two tasks per child
+data <- child_data %>%
+  slice(rep(1:n(), each = 2)) %>%
+  mutate(
+    Task = rep(c("LetDig_Performance", "TR_Performance"), times = n_children),
+    KBB_DD_status = sample(c("No", "Yes"), size = n(), replace = TRUE, prob = c(0.4987, 0.5013))
+  )
+
+# Step 5: Generate random effects
+child_re <- rnorm(n_children, mean = 0, sd = sqrt(var_child))
+hoh_re <- rnorm(n_households, mean = 0, sd = sqrt(var_hoh))
+
+# Map random effects to the dataset
+data$child_re <- child_re[match(data$Child_ID, sprintf("Child_%04d", 1:n_children))]
+data$hoh_re <- hoh_re[match(data$HOH_ID_num, household_ids)]
+
+# Step 6: Calculate the fixed effect component of the Score
+data <- data %>%
+  mutate(
+    task_effect = ifelse(Task == "TR_Performance", task_effect, 0),
+    kbb_dd_effect = ifelse(KBB_DD_status == "Yes", kbb_dd_effect, 0),
+    interaction_effect = ifelse(Task == "TR_Performance" & KBB_DD_status == "Yes", interaction_effect, 0),
+    fixed_component = intercept + task_effect + kbb_dd_effect + interaction_effect
+  )
+
+# Step 7: Generate the Score with random effects and residual error
+data$Score <- data$fixed_component + data$child_re + data$hoh_re + rnorm(nrow(data), mean = 0, sd = sqrt(var_residual))
+
+# Step 8: Clean up the dataset
+data <- data %>%
+  select(Child_ID, HOH_ID_num, Task, KBB_DD_status, Score)
+
+# Step 9: Verify dataset properties
+cat("Number of observations:", nrow(data), "\n")
+cat("Number of unique households:", length(unique(data$HOH_ID_num)), "\n")
+cat("Number of unique children:", length(unique(data$Child_ID)), "\n")
+cat("Proportion KBB_DD_status:\n")
+print(round(prop.table(table(data$KBB_DD_status)), 3))
+cat("Proportion Task:\n")
+print(round(prop.table(table(data$Task)), 3))
+
+# Run the model with the 500 sample size
+mult_DLS_TR_sim <- lmer(Score ~ Task * KBB_DD_status + (1 | Child_ID) + (1 | HOH_ID_num), data = data)
+
+# Print out the summary
+summary(mult_DLS_TR_sim)
+
+# Run a power analysis on this
+powerSim(mult_DLS_TR_sim, test = fixed("KBB_DD_statusYes", "t"), nsim = 1000)
+```
+
+```{r analyzing Digit and Letter Span Triangles and Pattern Reasoning Combined using multivariate}
+# set seed
+set.seed(123)
+
+# Ensure the data is in wide format and NOT as a Tibble
+full_DLS_TR_PR <- as.data.frame(full_DLS_TR_PR)
+
+# Define the priori for a multivariate model with two outcomes
+prior_bi <- list(
+  R = list(V = diag(3), nu = 2),
+  G = list(
+    G1 = list(V = diag(3), nu = 2),
+    G2 = list(V = diag(3), nu = 2)
+  )
+)
+
+# Run the multivariate model using MCMCglmm
+m_mcmc <- MCMCglmm(
+  fixed  = cbind(LetDig_Performance, TR_Performance, PR_Performance) ~ trait + trait:KBB_DD_status  - 1,
+  random = ~ us(trait):Child_ID  + us(trait):HOH_ID,
+  rcov   = ~ us(trait):units,
+  family = c("gaussian", "gaussian", "gaussian"),
+  data   = full_DLS_TR_PR,
+  prior  = prior_bi,
+  nitt   = 13000,
+  burnin = 3000,
+  thin   = 10
+)
+
+# Print out the results
+s <- summary(m_mcmc)
+s$Gcovariances
+s$Rcovariances
+s
+
+# Convert data into long format
+full_DLS_TR_PR_long <- full_DLS_TR_PR %>%
+  pivot_longer(cols = c(LetDig_Performance, TR_Performance, PR_Performance ),
+               names_to = "Task",
+               values_to = "Score") %>%
+  as.data.frame()
+
+
+# Run the lme4 model
+mult_DLS_TR_PR <- lmer(Score ~ Task * KBB_DD_status + (1|Child_ID) + (1|HOH_ID_num), data = full_DLS_TR_PR_long,
+               control = lmerControl(optimizer = "bobyqa"))
+
+# View the model summary
+summary(mult_DLS_TR_PR)
+
+# effect size
+t_to_eta2(-1.754, 921.7973) # ~0
+
+# Run a power analysis
+powerSim(mult_DLS_TR_PR, test = fixed("KBB_DD_statusYes", "t"), nsim = 1000)
+
+# Descriptives of the dataset
+nrow(full_DLS_TR_PR_long)
+length(unique(full_DLS_TR_PR_long$HOH_ID_num))
+length(unique(full_DLS_TR_PR_long$Child_ID))
+prop.table(table(full_DLS_TR_PR_long$KBB_DD_status))
+
+num_children_df <- full_DLS_TR_PR_long %>%
+  filter(Task == "LetDig_Performance") %>%
+  group_by(HOH_ID) %>%
+  summarise(Children_num = length(Child_ID))
+
+round(prop.table(table(num_children_df$Children_num)),3)
+mean(num_children_df$Children_num)
+prop.table(table(full_DLS_TR_PR_long$Task))
+
+#######
+########## Generate a simulated dataset
+######
+
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Step 1: Define parameters (soft-coded)
+params <- list(
+  n_households = 620,  # Number of households (can be changed)
+  avg_children_per_hh = 1.949721,  # Mean children per household
+  child_dist = c(1, 2, 3, 4, 5, 6),  # Possible number of children per household
+  child_probs = c(0.263, 0.606, 0.059, 0.067, 0.003, 0.003),  # Probabilities for child distribution
+  tasks = c("LetDig_Performance", "PR_Performance", "TR_Performance"),  # Task levels
+  kbb_dd_probs = c(No = 0.4685, Yes = 0.5315),  # KBB_DD_status probabilities
+  fixed_effects = list(
+    intercept = 21.6587,
+    task_pr_effect = -11.5199,  # TaskPR_Performance
+    task_tr_effect = -9.1315,   # TaskTR_Performance
+    kbb_dd_effect = -0.8167,    # KBB_DD_statusYes
+    interaction_pr_effect = 0.2827,  # TaskPR_Performance:KBB_DD_statusYes
+    interaction_tr_effect = 0.6113   # TaskTR_Performance:KBB_DD_statusYes
+  ),
+  variance_components = list(
+    var_child = 16.429,  # Child_ID random effect variance
+    var_hoh = 6.302,     # HOH_ID_num random effect variance
+    var_residual = 20.172  # Residual variance
+  )
+)
+
+# Calculate derived parameters
+n_children <- round(params$n_households * params$avg_children_per_hh)  # ~877 children for 450 households
+n_obs <- n_children * length(params$tasks)  # Each child has 3 observations
+
+# Step 2: Assign number of children per household
+children_per_hh <- sample(params$child_dist, size = params$n_households, replace = TRUE, prob = params$child_probs)
+total_children <- sum(children_per_hh)
+while (total_children != n_children) {
+  children_per_hh <- sample(params$child_dist, size = params$n_households, replace = TRUE, prob = params$child_probs)
+  total_children <- sum(children_per_hh)
+}
+
+# Step 3: Create household and child IDs
+household_ids <- sprintf("HOH_%03d", 1:params$n_households)
+child_data <- data.frame(
+  HOH_ID_num = rep(household_ids, times = children_per_hh),
+  Child_ID = sprintf("Child_%03d", 1:n_children)
+)
+
+# Step 4: Expand to include three tasks per child
+data <- child_data %>%
+  slice(rep(1:n(), each = length(params$tasks))) %>%
+  mutate(
+    Task = rep(params$tasks, times = n_children),
+    KBB_DD_status = sample(names(params$kbb_dd_probs), size = n(), replace = TRUE, prob = params$kbb_dd_probs)
+  )
+
+# Step 5: Generate random effects
+child_re <- rnorm(n_children, mean = 0, sd = sqrt(params$variance_components$var_child))
+hoh_re <- rnorm(params$n_households, mean = 0, sd = sqrt(params$variance_components$var_hoh))
+
+# Map random effects to the dataset
+data$child_re <- child_re[match(data$Child_ID, sprintf("Child_%03d", 1:n_children))]
+data$hoh_re <- hoh_re[match(data$HOH_ID_num, household_ids)]
+
+# Step 6: Calculate the fixed effect component of the Score
+data <- data %>%
+  mutate(
+    task_effect = case_when(
+      Task == params$tasks[2] ~ params$fixed_effects$task_pr_effect,
+      Task == params$tasks[3] ~ params$fixed_effects$task_tr_effect,
+      TRUE ~ 0
+    ),
+    kbb_dd_effect = ifelse(KBB_DD_status == "Yes", params$fixed_effects$kbb_dd_effect, 0),
+    interaction_effect = case_when(
+      Task == params$tasks[2] & KBB_DD_status == "Yes" ~ params$fixed_effects$interaction_pr_effect,
+      Task == params$tasks[3] & KBB_DD_status == "Yes" ~ params$fixed_effects$interaction_tr_effect,
+      TRUE ~ 0
+    ),
+    fixed_component = params$fixed_effects$intercept + task_effect + kbb_dd_effect + interaction_effect
+  )
+
+# Step 7: Generate the Score with random effects and residual error
+data$Score <- data$fixed_component + data$child_re + data$hoh_re + rnorm(nrow(data), mean = 0, sd = sqrt(params$variance_components$var_residual))
+
+# Step 8: Clean up the dataset
+data <- data %>%
+  select(Child_ID, HOH_ID_num, Task, KBB_DD_status, Score)
+
+# Step 9: Verify dataset properties
+cat("Number of observations:", nrow(data), "\n")
+cat("Number of unique households:", length(unique(data$HOH_ID_num)), "\n")
+cat("Number of unique children:", length(unique(data$Child_ID)), "\n")
+cat("Average children per household:", mean(table(data$HOH_ID_num)/length(params$tasks)), "\n")
+cat("Proportion KBB_DD_status:\n")
+print(round(prop.table(table(data$KBB_DD_status)), 3))
+cat("Proportion Task:\n")
+print(round(prop.table(table(data$Task)), 3))
+
+# Run the model with the 500 sample size
+mult_DLS_TR_PR_sim <- lmer(Score ~ Task * KBB_DD_status + (1 | Child_ID) + (1 | HOH_ID_num), data = data)
+
+
+# Modifications (Weaken fixed effect)
+fixef(mult_DLS_TR_PR_sim)["KBB_DD_statusYes"] <- -0.85
+
+# Print out the summary
+summary(mult_DLS_TR_PR_sim)
+
+# Run a power analysis on this
+powerSim(mult_DLS_TR_PR_sim, test = fixed("KBB_DD_statusYes", "t"), nsim = 1000)
 ```
 
