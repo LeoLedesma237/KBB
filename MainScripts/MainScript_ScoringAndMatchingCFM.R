@@ -54,51 +54,8 @@ Other <- read_excel(paste0(MatchedSibling_PW,"Final_ID_Tracker.xlsx"), sheet= "O
 # This will be used for the QS section
 MatchedIDs <- read_excel(paste0(MatchedSibling_PW,"Final_ID_Tracker.xlsx"), sheet= "MatchedIDs",  guess_max = 4000)
 
-
 ####
-####### Part 2: Identify the Households whose children might be matches
-#### We need to partial out all children that have already been given an ID or categorized as having no match
-
-
-# Combine the children IDs that have already been categorized in the Final_ID_Tracker.xlsx
-accounted.for.IDs <- c(Siblings$Child_ID, Half_Siblings$Child_ID, Cousins$Child_ID, Other$Child_ID)
-
-# Remove rows from these datasets if the Child_ID is present in the Final_ID_Dataset
-# We are mostly interested here in HOH.Potential.Matches.unnested; the remaining IDs may be the ones who will be matched
-Incorrect.Screeners.final <- Incorrect.Screeners %>%
-  filter(!(Child_ID %in% accounted.for.IDs))
-
-Excluded.Children.final <- Excluded.Children %>%
-  filter(!(Child_ID %in% accounted.for.IDs))
-  
-HOH.No.Matches.unnested.final <- HOH.No.Matches.unnested %>%
-  filter(!(Child_ID %in% accounted.for.IDs))  
-
-HOH.Potential.Matches.unnested.final <- HOH.Potential.Matches.unnested %>%
-  filter(!(Child_ID %in% accounted.for.IDs))  
-
-
-# Save the partialled out HOH Potential Matches 
-HOH.Potential.Matches.unnested.final.shorted <- HOH.Potential.Matches.unnested.final %>%
-  select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, dad_sib_group, mom_sib_group, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary,
-         EEG_Group:EEG_Exc_Rea) %>%
-  arrange(HOH_ID)
-
-# Minor data cleaning (reading data creates a time for date variables)
-HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation <- as.character(HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation)
-HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth <- as.character(HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth)
-
-# Load the relatedness function
-source("Scoring/scoring_functions/related_fun.R")
-HOH.Potential.Matches.unnested.final.shorted$relatedness <- related_fun(HOH.Potential.Matches.unnested.final.shorted)
-HOH.Potential.Matches.unnested.final.shorted <- select(HOH.Potential.Matches.unnested.final.shorted, HOH_ID:Child_Last_Name,relatedness, everything())
-
-# Save the dataset
-write.xlsx(list(data = HOH.Potential.Matches.unnested.final.shorted), file =  paste0(MatchedSibling_PW,"Subjects_that_need_an_ID.xlsx"))
-
-
-####
-####### Part 4: After 'Subjects_that_need_an_ID.xlsx' have been categorized- run this code for relatedness_ID
+####### Part 2: Create Relatedness Status for  'Subjects_that_need_an_ID.xlsx' saved in Copy_relatedness_ID_to_Final_ID_Tracker.xlsx
 #### 
 
 # Create a function that gives a relatedness_ID
@@ -139,6 +96,50 @@ write.xlsx(list(Sibling = Sibling_relatedness_ID,
 
 
 ####
+####### Part 3: Identify the Households whose children might be matches
+#### We need to partial out all children that have already been given an ID or categorized as having no match
+
+
+# Combine the children IDs that have already been categorized in the Final_ID_Tracker.xlsx
+accounted.for.IDs <- c(Siblings$Child_ID, Half_Siblings$Child_ID, Cousins$Child_ID, Other$Child_ID)
+
+# Remove rows from these datasets if the Child_ID is present in the Final_ID_Dataset
+# We are mostly interested here in HOH.Potential.Matches.unnested; the remaining IDs may be the ones who will be matched
+Incorrect.Screeners.final <- Incorrect.Screeners %>%
+  filter(!(Child_ID %in% accounted.for.IDs))
+
+Excluded.Children.final <- Excluded.Children %>%
+  filter(!(Child_ID %in% accounted.for.IDs))
+  
+HOH.No.Matches.unnested.final <- HOH.No.Matches.unnested %>%
+  filter(!(Child_ID %in% accounted.for.IDs))  
+
+HOH.Potential.Matches.unnested.final <- HOH.Potential.Matches.unnested %>%
+  filter(!(Child_ID %in% accounted.for.IDs))  
+
+
+# Save the partialled out HOH Potential Matches 
+HOH.Potential.Matches.unnested.final.shorted <- HOH.Potential.Matches.unnested.final %>%
+  select(HOH_ID, Name_of_the_Village, Date_of_Evaluation, HOH_First_Name, HOH_Last_Name, Respondant_First_Name, Respondant_Last_Name, Respondant_relationship, BF, BM, dad_sib_group, mom_sib_group, Child_First_Name, Child_Last_Name, Child_Date_of_Birth, Child_age, Child_Gender, Epilepsy, KBB_DD_status, Child_ID, Overall.Summary,
+         EEG_Group:EEG_Exc_Rea) %>%
+  arrange(HOH_ID)
+
+# Minor data cleaning (reading data creates a time for date variables)
+HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation <- as.character(HOH.Potential.Matches.unnested.final.shorted$Date_of_Evaluation)
+HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth <- as.character(HOH.Potential.Matches.unnested.final.shorted$Child_Date_of_Birth)
+
+# Load the relatedness function
+source("Scoring/scoring_functions/related_fun.R")
+HOH.Potential.Matches.unnested.final.shorted$relatedness <- related_fun(HOH.Potential.Matches.unnested.final.shorted)
+HOH.Potential.Matches.unnested.final.shorted <- select(HOH.Potential.Matches.unnested.final.shorted, HOH_ID:Child_Last_Name,relatedness, everything())
+
+# Save the dataset
+write.xlsx(list(data = HOH.Potential.Matches.unnested.final.shorted), file =  paste0(MatchedSibling_PW,"Subjects_that_need_an_ID.xlsx"))
+
+
+
+
+####
 ###### Part 5: Save all data into one mega dataset (everything is remerged)- this will be used for QC (duplicates)
 ####
 
@@ -161,6 +162,7 @@ Reconstructed.data.final <- rbind(Incorrect.Screeners.final,
 Reconstructed.data.final$ID <- NA
 Reconstructed.data.final$Relatedness <- NA
 Reconstructed.data.final$Relatedness_ID <- NA
+Reconstructed.data.final$Date_Manually_Matched <- NA
 
 # Convert the DOE into character
 Reconstructed.data.final$Date_of_Evaluation <- as.character(Reconstructed.data.final$Date_of_Evaluation)
@@ -214,7 +216,7 @@ write.xlsx(list(data = Siblings.DOE.arranged), file =  paste0(MatchedSibling_PW,
 
 
 ####
-###### Part 6: Several Quality Control Measures
+###### Part 7: Several Quality Control Measures
 ####
 
 # Load in All children (before scoring)
