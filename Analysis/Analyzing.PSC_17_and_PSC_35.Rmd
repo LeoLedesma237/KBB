@@ -1,0 +1,1953 @@
+---
+title: "Analyzing the PSC-17 and PSC-35"
+author: "Leandro Ledesma"
+date: "2025-05-27"
+output: html_document
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(psych) # polychoric() # fa()
+library(pROC)
+library(lavaan)
+library(kableExtra)
+library(semPlot)
+library(caret)
+```
+
+
+The goal of this RMarkdown is to analyze the PSC-17 and PSC-35 data from the KBB project. We will be following a similar analysis pipeline to: 
+
+- Irwin, D. E., Stucky, B., Langer, M. M., Thissen, D., DeWitt, E. M., Lai, J. S., ... & DeWalt, D. A. (2010). An item response analysis of the pediatric PROMIS anxiety and depressive symptoms scales. Quality of Life Research, 19, 595-607.
+
+
+
+```{r loading in the PSC data}
+# Set working directory to where the label of the items are
+setwd('C:/Users/lledesma.TIMES/Documents//KBB/Data/RAW_DATA/AnswerKeys')
+
+# Load in the labels for the items
+PSC_35_labels <- read_excel("PSC_item_labels.xlsx")
+
+# Set working directory to where the final data is
+setwd('C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Behavioral/Adults')
+
+# Load in the full data
+PSC <- read_excel("PSC.xlsx")
+
+# Data cleaning: transforming items into numeric
+PSC_items <- select(PSC, PSC_1:PSC_35)
+PSC_items_num <- data.frame(sapply(PSC_items, function(x) as.numeric(x)))
+PSC[names(PSC_items_num)] <- PSC_items_num
+
+# Scoring the PSC-35 Composite PsychoSocial Problem Score
+PSC$PsychoSocialScore_35 <- rowSums(PSC_items_num)
+
+# Extract the items associated with certain scales:
+Attention <- select(PSC, paste0("PSC_",c(4,7,8,9,14)))
+Internalizing <- select(PSC, paste0("PSC_",c(11,13,19,22,27)))
+Externalizing <- select(PSC, paste0("PSC_",c(16,29,31,32,33,34,35)))
+Other <-  select(PSC, paste0("PSC_",c(1,2,3,5,6,10,12,15,17,18,20,21,23,24,25,26,28,30)))
+
+# Scoring the PSC-17 for subscales and composite score
+PSC$AttentionProbs <- rowSums(Attention)
+PSC$InternalizingProbs <- rowSums(Internalizing)
+PSC$ExternalizingProbs <- rowSums(Externalizing)
+PSC$PsychoSocialScore_17 <- rowSums(cbind(Attention, Internalizing, Externalizing))
+
+```
+
+
+```{r loading demographic information and data cleaning}
+# Set the working directory to where the demographic information is
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Demographics")
+
+# Load in the data
+demo <- read_excel("Demographics.xlsx")
+
+# Identify and drop duplicate IDs from demo
+duplicated_demo_IDs <- demo$Child_ID[duplicated(demo$Child_ID)]
+demo <- demo %>% filter(!Child_ID %in% duplicated_demo_IDs)
+
+# Combine this dataset with that of the PSC
+PSC <- PSC %>%
+  left_join(demo, by = "Child_ID")
+
+# Drop any duplicates
+duplicate_IDs <- PSC$Child_ID[duplicated(PSC$Child_ID)]
+length(duplicate_IDs)
+PSC <- PSC %>% filter(!Child_ID %in% duplicate_IDs)
+
+# drop any NAs in the dataset for Child_ID
+PSC <- drop_na(PSC, Child_ID)
+
+# Some descriptives of full sample
+length(unique(PSC$Child_ID))
+summary(PSC$Age)
+summary(factor(PSC$Sex))
+
+```
+
+```{r print out descriptives of demographics}
+# Number of children
+length(unique(PSC$Child_ID))
+
+# Frequency and Proportion of sex
+table(PSC$Sex, useNA = "always")
+round(prop.table(table(PSC$Sex)),2)
+
+# Get descriptions of age
+describe(PSC$Age)
+
+# Keep only children between the ages of 4-16
+PSC <- PSC %>%
+  filter(Age >= 4 & Age < 17)
+
+# Children in the final sample
+length(unique(PSC$Child_ID))
+
+# Frequency and Proportion of sex
+table(PSC$Sex, useNA = "always")
+round(prop.table(table(PSC$Sex)),2)
+
+# Get descriptions of age
+describe(PSC$Age)
+
+# Get averages and sd of PSC scores for PSC-35 and PSC-17
+describe(PSC$PsychoSocialScore_35)
+describe(PSC$PsychoSocialScore_17)
+
+
+# Positive Screenings for PSC35 (4-5; 24+)
+PSC4_5 <- PSC %>% 
+  filter(Age < 6 ) %>%
+  mutate(PsychoSocialPositive_35 = ifelse(PsychoSocialScore_35 >= 24, "Positive", "Negative"))
+
+
+# Positive Screenings for PSC35 (6-16; 28+)
+PSC6_16 <- PSC %>% 
+  filter(Age >= 6 ) %>%
+  mutate(PsychoSocialPositive_35 = ifelse(PsychoSocialScore_35 >= 28, "Positive", "Negative"))
+
+
+# Positive Screenings for PSC 17 (4-16; 15+)
+PSC <- PSC %>%
+  mutate(PsychoSocialPositive_17 = ifelse(PsychoSocialScore_17 >= 15, "Positive", "Negative"),
+         AttentionProbsPositive = ifelse(AttentionProbs >= 7, "Positive", "Negative"),
+         InternalizingPositive = ifelse(InternalizingProbs >= 5, "Positive", "Negative"),
+         ExternalizingPositive = ifelse(ExternalizingProbs >= 7, "Positive", "Negative"))
+
+
+# Create a table to represent this information
+PSC_Table <- data.frame(
+  Task = c("PSC-35", "PSC-35", "PSC-17","PSC-17","PSC-17","PSC-17"),
+  Scale = c("Total", "Total", "Total", "Attention", "Internalizing", "Externalizing"),
+  Age_Group= c("4-5", "6-16", "4-16", "4-16", "4-16", "4-16"),
+  Positive_Cases =  c(addmargins(table(PSC4_5$PsychoSocialPositive_35))["Positive"],
+                        addmargins(table(PSC6_16$PsychoSocialPositive_35))["Positive"],
+                        addmargins(table(PSC$PsychoSocialPositive_17))["Positive"],
+                        addmargins(table(PSC$AttentionProbsPositive))["Positive"],
+                        addmargins(table(PSC$InternalizingPositive))["Positive"],
+                        addmargins(table(PSC$ExternalizingPositive))["Positive"]),
+  Positive_Percent = c(round(prop.table(table(PSC4_5$PsychoSocialPositive_35)),2)["Positive"],
+                       round(prop.table(table(PSC6_16$PsychoSocialPositive_35)),2)["Positive"],
+                       round(prop.table(table(PSC$PsychoSocialPositive_17)),2)["Positive"],
+                       round(prop.table(table(PSC$AttentionProbsPositive)),2)["Positive"],
+                       round(prop.table(table(PSC$InternalizingPositive)),2)["Positive"],
+                       round(prop.table(table(PSC$ExternalizingPositive)),2)["Positive"]),
+  Total_n = c(nrow(PSC4_5), nrow(PSC6_16), rep(nrow(PSC), 4))
+  
+)
+
+# Mutate the Positive Percentage variable
+PSC_Table$Positive_Percent <- paste0(PSC_Table$Positive_Percent * 100, "%")
+
+# Reminder this exists (delete when no longer needed)
+Attention <- select(PSC, paste0("PSC_",c(4,7,8,9,14)))
+Internalizing <- select(PSC, paste0("PSC_",c(11,13,19,22,27)))
+Externalizing <- select(PSC, paste0("PSC_",c(16,29,31,32,33,34,35)))
+Other <-  select(PSC, paste0("PSC_",c(1,2,3,5,6,10,12,15,17,18,20,21,23,24,25,26,28,30)))
+
+# Introduce internal consistency Measure
+PSC_items_only_4_5 <- PSC %>% filter(Age >= 4 & Age < 6) %>% select(PSC_1:PSC_35)
+PSC_items_only_6_16 <- PSC %>% filter(Age >= 6 & Age < 17) %>% select(PSC_1:PSC_35)
+PSC_17_items_only_4_16 <- PSC %>% filter(Age >= 4 & Age < 17) %>% select(c(names(Attention), names(Internalizing), names(Externalizing)))
+Attention_4_16 <- PSC %>% filter(Age >= 4 & Age < 17) %>% select(names(Attention))
+Internalizing_4_16 <- PSC %>% filter(Age >= 4 & Age < 17) %>% select(names(Internalizing))
+Externalizing_4_16 <- PSC %>% filter(Age >= 4 & Age < 17) %>% select(names(Externalizing))
+
+
+# Run alpha function for each one
+alpha_35_4_5 <- alpha(polychoric(PSC_items_only_4_5)$rho, n.obs = nrow(PSC_items_only_4_5))
+alpha_35_6_16 <- alpha(polychoric(PSC_items_only_6_16)$rho, n.obs = nrow(PSC_items_only_6_16))
+alpha_17_4_16 <- alpha(polychoric(PSC_17_items_only_4_16)$rho, n.obs = nrow(PSC_17_items_only_4_16))
+alpha_att_4_16 <- alpha(polychoric(Attention_4_16)$rho, n.obs = nrow(Attention_4_16))
+alpha_int_4_16 <- alpha(polychoric(Internalizing_4_16)$rho, n.obs = nrow(Internalizing_4_16))
+alpha_ext_4_16 <- alpha(polychoric(Externalizing_4_16)$rho, n.obs = nrow(Externalizing_4_16))
+
+# Introduce raw alpha into the table
+PSC_Table$Cronbachs_Alpha <- c(round(alpha_35_4_5$total$raw_alpha,2),
+                               round(alpha_35_6_16$total$raw_alpha,2),
+                               round(alpha_17_4_16$total$raw_alpha,2),
+                               round(alpha_att_4_16$total$raw_alpha,2),
+                               round(alpha_int_4_16$total$raw_alpha,2),
+                               round(alpha_ext_4_16$total$raw_alpha,2))
+
+# Print out the table
+PSC_Table %>%
+  kbl(full_width = F, align = c("l", "l", "c","c","c","c", "c")) %>%
+  kable_classic_2()
+
+
+```
+
+```{r compare the PSC to the CBCL}
+# Set working directory to load CBCL syndrome classifiers
+setwd('C:/Users/lledesma.TIMES/Documents/KBB/Data/RAW_DATA/AnswerKeys')
+
+# Load in the classifier data for the CBCL
+class <- read_excel("ASEBA_syndrome_classifier.xlsx")
+
+# Set working directory to where the CBCL is (both for young and older kids)
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Behavioral/Adults")
+
+# Load in both CBCLs
+CBCL_3_6 <- read_excel("CBC_3_6.xlsx")
+CBCL_6_18 <- read_excel("CBC_6_18.xlsx")
+
+# Data cleaning- removing duplicates
+CBCL_3_6_duplicates <- CBCL_3_6$Child_ID[duplicated(CBCL_3_6$Child_ID)]
+CBCL_6_18_duplicates <- CBCL_6_18$Child_ID[duplicated(CBCL_6_18$Child_ID)]
+
+CBCL_3_6 <- CBCL_3_6 %>% filter(!Child_ID %in% CBCL_3_6_duplicates)
+CBCL_6_18 <- CBCL_6_18 %>% filter(!Child_ID %in% CBCL_6_18_duplicates)
+
+# Convert the CBCL_6_18 to long
+CBCL_6_18_long <- CBCL_6_18 %>%
+  left_join(demo, by = "Child_ID") %>%
+  select(Child_ID, Sex, Screened_Age, CBC6_18_anxious_depressed:CBC6_18_aggressive_behavior, CBC6_18_Internalizing:CBC6_18_Total_Prob) %>%
+  pivot_longer(col = -c(Child_ID, Sex, Screened_Age), names_to = "Syndrome", values_to = "Score")
+
+# Minor data cleaning
+CBCL_6_18_long2 <- CBCL_6_18_long %>%
+  mutate(Sex = ifelse(Sex == "male", "M", "F"))
+
+# Drop all rows with missing data
+CBCL_6_18_long3 <- CBCL_6_18_long2 %>% filter(complete.cases(.))
+
+# Group children into age groups due to scoring
+CBCL_6_11_long <- CBCL_6_18_long3 %>%
+  filter(Screened_Age  >= 6 & Screened_Age  < 12)
+
+CBCL_12_18_long <- CBCL_6_18_long3 %>%
+  filter(Screened_Age  >= 12 & Screened_Age  <= 19)
+
+
+# Do the CBCL classification using for loops for children 6-11
+class_6_11 <- filter(class, Age_Lower == 6)
+class_12_18 <- filter(class, Age_Lower == 12)
+
+# Run the for loop
+CBCL_cat_list_6_11 <- list()
+
+for(ii in 1:nrow(CBCL_6_11_long)) {
+  
+  # Extract current row
+  cr <- CBCL_6_11_long[ii,]
+ 
+  # Identify the index of the row to compare their score to thresholds 
+  cr_class <- class_6_11[which(class_6_11$Sex == cr$Sex & class_6_11$Syndrome == cr$Syndrome),]
+  
+  # Obtain a category based on their score
+  CBCL_cat_list_6_11[[ii]] <- ifelse(cr$Score < cr_class$Border, "Normal",
+         ifelse(cr$Score < cr_class$Clinical, "Border", "Clinical"))
+}
+
+# Run the for loop
+CBCL_cat_list_12_18 <- list()
+
+for(ii in 1:nrow(CBCL_12_18_long)) {
+  
+  # Extract current row
+  cr <- CBCL_12_18_long[ii,]
+ 
+  # Identify the index of the row to compare their score to thresholds 
+  cr_class <- class_12_18[which(class_12_18$Sex == cr$Sex & class_12_18$Syndrome == cr$Syndrome),]
+  
+  # Obtain a category based on their score
+  CBCL_cat_list_12_18[[ii]] <- ifelse(cr$Score < cr_class$Border, "Normal",
+         ifelse(cr$Score < cr_class$Clinical, "Border", "Clinical"))
+}
+
+# Introduce this information into the datasets
+CBCL_6_11_long$Syndrome_cat <- do.call(c, CBCL_cat_list_6_11)
+CBCL_12_18_long$Syndrome_cat <- do.call(c, CBCL_cat_list_12_18)
+
+# Convert the information back into wide format
+CBCL_6_11_wide <- CBCL_6_11_long %>%
+  mutate(Syndrome = gsub("CBC6_18_", "", Syndrome)) %>%
+  select(-Score) %>%
+  pivot_wider(names_from = Syndrome, values_from = Syndrome_cat)
+
+CBCL_12_18_wide <- CBCL_12_18_long %>%
+  mutate(Syndrome = gsub("CBC6_18_", "", Syndrome)) %>%
+  select(-Score) %>%
+  pivot_wider(names_from = Syndrome, values_from = Syndrome_cat)
+
+# Combine these datasets into one
+CBCL_wide_classifiers <- select(rbind(CBCL_6_11_wide, CBCL_12_18_wide), - Sex, - Screened_Age)
+
+# Add this information into the original CBCL_6_18
+CBCL_6_18_2 <- CBCL_6_18 %>%
+  left_join(CBCL_wide_classifiers, by = "Child_ID")
+
+# Now let's get some descriptives
+CBCL_6_18_2_long <- CBCL_6_18_2 %>%
+  select(Child_ID, anxious_depressed:Total_Prob) %>%
+  pivot_longer(-Child_ID, names_to = "Scales", values_to = "value")
+
+# Extract count and percentage information
+(freq_table <- table(CBCL_6_18_2_long$Scales, CBCL_6_18_2_long$value))
+(prop_table <- round(prop.table(freq_table, margin = 1),2))
+
+# Convert the tables into dataframes
+freq_table2 <- as.data.frame.matrix(freq_table)
+prop_table2 <- as.data.frame.matrix(prop_table)
+names(prop_table2) <- paste0("prop.",names(prop_table2))
+
+# cbind the information togehter
+full_table <- cbind(freq_table2, prop_table2)
+
+# Add a variable for row information
+full_table$row_info <- c("Aggressive Behavior", "Anxiety/Depression", "Attention Problems", "Externalizing",
+                         "Internalizing", "Rule-Breaking Behavior", "Social Problems", "Somatic Complaints",
+                         "Thought Problems", "Total Problems","Withdrawn/Depressed")
+row.names(full_table) <- NULL
+
+# Now let's get some descriptives on Syndromes only
+Syndromes_table <- full_table %>%
+  filter(!row_info %in% c("Internalizing", "Externalizing", "Total Problems"))
+
+# Change the row order
+Syndromes_table2 <- Syndromes_table %>%
+  select(row_info, Clinical, prop.Clinical, Border, prop.Border, Normal, prop.Normal) %>%
+  mutate(prop.Clinical = paste0(prop.Clinical*100,"%"),
+         prop.Border = paste0(prop.Border*100,"%"),
+         prop.Normal = paste0(prop.Normal*100,"%"))
+
+# Table cleaning
+names(Syndromes_table2) <- c("Syndromes", "n", "%","n", "%","n", "%")
+
+# Print the table
+Syndromes_table2 %>%
+  kbl(full_width = F, caption = "Distribution of CBCL (6-18) Syndrome Scores by Severity Category") %>%
+  kable_classic_2() %>%
+  add_header_above(c(" ", "Clinic (>= 70)" = 2, "Borderline (65-69)" = 2, "Normal (<65)" = 2))
+
+# Now descriptives on the Sum of Scales
+Scale_Sum_table <- full_table %>%
+  filter(row_info %in% c("Internalizing", "Externalizing", "Total Problems"))
+
+# Change the row order
+Scale_Sum_table2 <- Scale_Sum_table %>%
+  select(row_info, Clinical, prop.Clinical, Border, prop.Border, Normal, prop.Normal) %>%
+  mutate(prop.Clinical = paste0(prop.Clinical*100,"%"),
+         prop.Border = paste0(prop.Border*100,"%"),
+         prop.Normal = paste0(prop.Normal*100,"%"))
+
+# Table cleaning
+names(Scale_Sum_table2) <- c("", "n", "%","n", "%","n", "%")
+
+# Print the table
+Scale_Sum_table2 %>%
+  kbl(full_width = F, caption = "Distribution of CBCL (6-18) Sum of Scales by Severity Category") %>%
+  kable_classic_2() %>%
+  add_header_above(c(" ", "Clinic (>= 70)" = 2, "Borderline (65-69)" = 2, "Normal (<65)" = 2))
+```
+
+```{r joing CBCL data with the PSC35 and generate Confusion Matrices}
+# Ensure quality control (Checking the IDs with problems in ASEBA measures)!
+(CBCL_A_ID <- CBCL_6_18_2$Child_ID[CBCL_6_18_2$attention_problems == "Clinical" & !is.na(CBCL_6_18_2$attention_problems)])
+(CBCL_I_ID <- CBCL_6_18_2$Child_ID[CBCL_6_18_2$Internalizing == "Clinical" & !is.na(CBCL_6_18_2$Internalizing)])
+(CBCL_E_ID <- CBCL_6_18_2$Child_ID[CBCL_6_18_2$Externalizing == "Clinical" & !is.na(CBCL_6_18_2$Externalizing)])
+(CBCL_T_ID <- CBCL_6_18_2$Child_ID[CBCL_6_18_2$Total_Prob == "Clinical" & !is.na(CBCL_6_18_2$Total_Prob)])
+
+# Checking to see if ASEBA IDs are missing from PSC IDs (Some ASEBA IDs don't have PSC data :( )
+setdiff(CBCL_A_ID, PSC$Child_ID)
+setdiff(CBCL_I_ID, PSC$Child_ID)
+setdiff(CBCL_E_ID, PSC$Child_ID)
+setdiff(CBCL_T_ID, PSC$Child_ID)
+
+# Join this dataset with PSC data 
+PSC_CBCL <- PSC  %>%
+  left_join(CBCL_6_18_2, by = "Child_ID")
+
+# Keep information that we can use to generate ROC curves
+PSC_CBCL_clinical <- PSC_CBCL %>%
+  mutate(attention_problems = ifelse(attention_problems != "Clinical", 0, 1),
+         Internalizing = ifelse(Internalizing != "Clinical", 0, 1),
+         Externalizing = ifelse(Externalizing != "Clinical", 0, 1),
+         Total_Prob = ifelse(Total_Prob != "Clinical", 0, 1),
+         PSC_atten_dich = ifelse(AttentionProbs < 7, 0, 1),
+         PSC_int_dich = ifelse(InternalizingProbs < 5, 0, 1),
+         PSC_ext_dich = ifelse(ExternalizingProbs < 7, 0, 1),
+         PSC_tot_17_dich = ifelse(PsychoSocialScore_17 < 15, 0, 1),
+         PSC_tot_35_dich = ifelse(PsychoSocialScore_35 < 28, 0, 1)
+)
+
+# Keep variables of interesting, missing data is allowed since the confusion matrix only compares certain variables to each other, so it would not make sense to throw a whole row out
+PSC_CBCL_clinical2 <- PSC_CBCL_clinical %>% 
+  select(Child_ID, attention_problems, Internalizing, Externalizing, Total_Prob,
+         AttentionProbs, InternalizingProbs, ExternalizingProbs, PsychoSocialScore_17, PsychoSocialScore_35,
+         PSC_atten_dich, PSC_int_dich, PSC_ext_dich, PSC_tot_17_dich, PSC_tot_35_dich)
+
+
+# Generating Confusion Matrices (attention, internalizing, externalizing, total prob 17, total prob 35)
+# New test is the first argument, gold-standard is the second argument
+att_conf_matrix <- confusionMatrix(as.factor(PSC_CBCL_clinical2$PSC_atten_dich), 
+                               as.factor(PSC_CBCL_clinical2$attention_problems), positive = "1")
+
+int_conf_matrix <- confusionMatrix(as.factor(PSC_CBCL_clinical2$PSC_int_dich), 
+                               as.factor(PSC_CBCL_clinical2$Internalizing), positive = "1")
+
+ext_conf_matrix <- confusionMatrix(as.factor(PSC_CBCL_clinical2$PSC_ext_dich), 
+                               as.factor(PSC_CBCL_clinical2$Externalizing), positive = "1")
+
+t17_conf_matrix <- confusionMatrix(as.factor(PSC_CBCL_clinical2$PSC_tot_17_dich), 
+                               as.factor(PSC_CBCL_clinical2$Total_Prob), positive = "1")
+
+t35_conf_matrix <- confusionMatrix(as.factor(PSC_CBCL_clinical2$PSC_tot_35_dich), 
+                               as.factor(PSC_CBCL_clinical2$Total_Prob), positive = "1")
+
+# Print out the confusion matrices in a nicer way
+all_conf_matrix <- list(attention = att_conf_matrix,
+                        internalizing = int_conf_matrix,
+                        externalizing = ext_conf_matrix,
+                        total_problems17 = t17_conf_matrix,
+                        total_problems35 = t35_conf_matrix)
+
+all_confusion_matrix_plots <- list()
+
+for(ii in 1:length(all_conf_matrix)) {
+  
+  # Make the labels prettier
+  current_table <- all_conf_matrix[[ii]][[2]] # Extracts confusion matrix table
+  row.names(current_table) <- ifelse(row.names(current_table) == "0", "0 (Negative)", "1 (Positive)")
+  colnames(current_table) <- ifelse(colnames(current_table) == "0", "0 (Negative)", "1 (Positive)")
+  
+  # Extract Sensitivity, Specificity, and Accuracy
+  accuracy <- paste0(round(all_conf_matrix[[ii]][[3]]["Accuracy"],3)*100, "%")
+  sensitivity <- paste0(round(all_conf_matrix[[ii]][[4]]["Sensitivity"],3)*100, "%")
+  specificity <- paste0(round(all_conf_matrix[[ii]][[4]]["Specificity"],3)*100, "%")
+  
+  # Calculate percentages
+  total <- sum(current_table)
+  conf_data <- as.data.frame(as.table(current_table))
+  conf_data$Percent <- round(conf_data$Freq / total * 100, 1)
+  conf_data$Label <- paste0(conf_data$Freq, "\n(", conf_data$Percent, "%)")
+  
+  # Create the plot
+  all_confusion_matrix_plots[[ii]] <- conf_data %>%
+    mutate(Reference = factor(Reference, levels = c("1 (Positive)", "0 (Negative)"))) %>%
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(color = "white", linewidth = 1) +
+    geom_text(aes(label = Label), color = "black", size = 8) +
+    scale_fill_gradient(low = "#E6F3FF", high = "#1E88E5", name = "Count") +
+    labs(title = paste0("Confusion Matrix: PSC vs. CBCL (",names(all_conf_matrix)[ii],")"),
+         subtitle = paste0("Sensitivity: ",sensitivity,", Specificity: ",specificity,", Accuracy: ",accuracy),
+         x = "Actual (CBCL)", y = "Predicted (PSC)") +
+    theme_minimal(base_size = 16) +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5, size = 20),
+      plot.subtitle = element_text(hjust = 0.5, size = 19, color = "gray30"),
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(size = 14),
+      legend.position = "right",
+      panel.grid = element_blank()
+    ) +
+    scale_y_discrete(limits = rev(levels(conf_data$Predicted)))  # Reverse y-axis for conventional layout
+
+}
+
+print(all_confusion_matrix_plots)
+
+```
+
+```{r generating ROC curves}
+# Generating ROC curves
+attention_roc <- roc(response = PSC_CBCL_clinical2$attention_problems, predictor = PSC_CBCL_clinical2$AttentionProbs, direction = "<")
+
+internalizing_roc <- roc(response = PSC_CBCL_clinical2$Internalizing, predictor = PSC_CBCL_clinical2$InternalizingProbs, direction = "<")
+
+externalizing_roc <- roc(response = PSC_CBCL_clinical2$Externalizing, predictor = PSC_CBCL_clinical2$ExternalizingProbs, direction = "<")
+
+total_17_roc <- roc(response = PSC_CBCL_clinical2$Total_Prob, predictor = PSC_CBCL_clinical2$PsychoSocialScore_17, direction = "<")
+
+total_35_roc <- roc(response = PSC_CBCL_clinical2$Total_Prob, predictor = PSC_CBCL_clinical2$PsychoSocialScore_35, direction = "<")
+
+# Calculate the optimal thresholds for each ROC analysis  using Younden's method
+att_thresh <- 
+int_thresh <- coords(internalizing_roc, x = "best", ret = c("threshold"), best.method = "youden")$threshold
+ext_thresh <- coords(externalizing_roc, x = "best", ret = c("threshold"), best.method = "youden")$threshold
+t17_thresh <- coords(total_17_roc, x = "best", ret = c("threshold"), best.method = "youden")$threshold
+t35_thresh <- coords(total_35_roc, x = "best", ret = c("threshold"), best.method = "youden")$threshold
+
+# Generating Plots for the ROC curves + Graphs the AUC value
+all_roc_list <- list(attention = attention_roc,
+                     internalizing = internalizing_roc,
+                     externalizing = externalizing_roc,
+                     total_problems17 = total_17_roc,
+                     total_problems35 = total_35_roc)
+
+roc_plot_list <- list()
+
+for(ii in 1:length(all_roc_list)) {
+  
+  # Save current roc object
+  roc_obj <- all_roc_list[[ii]]
+  
+  # Extract the threshold and it's sensitivity, and specificity 
+  roc_coord <- coords(roc_obj, x = "best", ret =c("threshold", 
+                                                  "sensitivity", 
+                                                  "specificity"), best.method = "youden") 
+  
+  # Converting sensitivity and specificity into percentages
+  roc_coord <- roc_coord %>%
+    mutate(sensitivity = paste0(round(sensitivity,2)*100,"%"),
+           specificity = paste0(round(specificity,2)*100,"%"))
+  
+  
+  # Generate a dataset
+  roc_data <- data.frame(
+    Threshold = roc_obj$thresholds,
+    Sensitivity = roc_obj$sensitivities,
+    Specificity = roc_obj$specificities
+  )
+  
+  # Plot ROC curve
+  roc_plot_list[[ii]] <- ggplot(data = data.frame(
+  FPR = 1 - roc_obj$specificities,
+  TPR = roc_obj$sensitivities
+), aes(x = FPR, y = TPR)) +
+  geom_line(color = "black", size = 1.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  labs(
+    title = paste0("ROC Curve for PSC vs. CBCL (", names(all_roc_list[ii]), ")"),
+    x = "1 - Specificity (False Positive Rate)",
+    y = "Sensitivity (True Positive Rate)"
+  ) +
+  annotate("text", x = 0.6, y = 0.2, 
+           label = paste0("AUC =", round(auc(roc_obj), 3), "\n",
+                          "Best reference value: ", roc_coord$threshold, "\n",
+                          "Sensitivity = ", roc_coord$sensitivity, "\n",
+                          "Specificity = ", roc_coord$specificity),
+           size = 8) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 20),  # Plot title
+    axis.title.x = element_text(face = "bold", size = 20),  # X-axis title size
+    axis.title.y = element_text(face = "bold", size = 20),  # Y-axis title size
+    axis.text.x = element_text(size = 20),  # X-axis tick labels size
+    axis.text.y = element_text(size = 20),  # Y-axis tick labels size
+    legend.position = "right"
+  )
+
+}
+
+print(roc_plot_list)
+```
+
+
+```{r Visualizing the data}
+# Data cleaning- convert the responses into numeric
+Attention_num <- data.frame(sapply(Attention, function(x) as.numeric(x)))
+Internalizing_num <- data.frame(sapply(Internalizing, function(x) as.numeric(x)))
+Externalizing_num <- data.frame(sapply(Externalizing, function(x) as.numeric(x)))
+Other_num <- data.frame(sapply(Other, function(x) as.numeric(x)))
+
+```
+# Visualize the data- how much variation is present within the item responses
+rbind(
+  mutate(pivot_longer(Attention, cols= PSC_4:PSC_14), scale = "Attention"),
+  mutate(pivot_longer(Internalizing, cols= PSC_11:PSC_27), scale = "Internalizing"),
+  mutate(pivot_longer(Externalizing, cols= PSC_16:PSC_35), scale = "Externalizing"),
+  mutate(pivot_longer(Other, cols= PSC_1:PSC_30), scale = "Other")
+) %>%
+  group_by(name, value) %>%
+  reframe(count = length(value),
+          scale) %>%
+  unique() %>%
+  mutate(name = gsub("PSC_","", name)) %>%
+  ggplot(aes(x = name, y = count, fill = value)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_classic() +
+  scale_fill_manual(values = c("#1b9e77", "#66c2a5", "#0571b0")) +
+  facet_grid(scale~., scale = "free_y", space = "free_y") +
+  labs(x = "Items", y = "Count",
+       title = "Count of Responses by Item for each Scale in the PSC-35")
+
+
+
+```{r view the polychoric correlations}
+# Combine everything into one dataset
+dat <- cbind(Attention, Internalizing, Externalizing, Other)
+
+# Obtain the bivariate correlations for all items
+polychor_cor <- polychoric(dat)
+
+# View the correlation matrix
+polychor_cor$rho %>%
+  round(2) %>%
+  kbl(full_width = F, caption = "Polychoric Correlations for the PSC-35") %>%
+  kable_classic() %>%
+  add_header_above(c(" " = 1, "Attention" = 5, "Internalizing" = 5, "Externalizing" = 7, " " = 18))
+  
+
+# Combinve only three factos into one dataset
+dat2 <- cbind(Attention, Internalizing, Externalizing)
+polychor_cor2 <- polychoric(dat2)
+
+# View the correlation matrix of the PSC-17
+polychor_cor2$rho %>%
+  round(2) %>%
+  kbl(full_width = F, caption = "Polychoric Correlations for the PSC-17") %>%
+  kable_classic() %>%
+  add_header_above(c(" " = 1, "Attention" = 5, "Internalizing" = 5, "Externalizing" = 7))
+```
+
+
+
+```{r custom function to do model comparison}
+get_cfa_metrics2 <- function(models) {
+  lambda_list <- list()
+  theta_list <- list()
+  r2_df_list <- list()
+  fit_metrics_list <- list()
+  
+  for (name in names(models)) {
+    fit <- models[[name]]
+    
+    # extract r^2
+    r2 <- inspect(fit, "r2")
+    
+    # extract the names of indicators
+    indicator.names <- row.names(inspect(fit, "std")$lambda)
+    
+    # keep only the r^2 of indicators
+    r2.indicators <- r2[names(r2) %in% indicator.names] 
+    
+    # Fit metrics
+    metrics <- c(
+      fitMeasures(fit, c("chisq", "df", "cfi", "tli", "rmsea", "srmr")),
+      mean(r2.indicators)
+    )
+    names(metrics)[length(metrics)] <- "r^2"
+    fit_metrics_list[[name]] <- metrics
+    
+    # Lambda
+    lambda <- inspect(fit, "std")$lambda
+    colnames(lambda) <- paste0(name, "_", colnames(lambda))  
+    lambda_list[[name]] <- lambda
+    
+    # Theta (diagonal only)
+    theta_diag <- diag(inspect(fit, "std")$theta)
+    theta_list[[name]] <- theta_diag
+    
+    # R² table
+    r2_vals <- inspect(fit, "r2")
+    r2_df <- data.frame(var = names(r2_vals), r2 = r2_vals)
+    names(r2_df)[2] <- paste0(name, "_r2") 
+    r2_df_list[[name]] <- r2_df
+  }
+  
+  # Find variable order from the model with the most R² entries
+  longest_vec <- r2_df_list[[which.max(sapply(r2_df_list, nrow))]]$var
+  
+  # Merge and align R² across models
+  r2_combined <- Reduce(function(x, y) merge(x, y, by = "var", all = TRUE), r2_df_list)
+  r2_combined <- r2_combined[match(longest_vec, r2_combined$var), ]
+  rownames(r2_combined) <- r2_combined$var
+  r2_combined$var <- NULL
+  
+  # Combine other metrics
+  lambda_combined <- do.call(cbind, lambda_list)
+  theta_combined <- do.call(cbind, theta_list)
+  fit_metrics_combined <- do.call(cbind, fit_metrics_list)
+  
+  # Return all results
+  return(list(
+    fit_metrics = fit_metrics_combined,
+    lambda = lambda_combined,
+    theta = theta_combined,
+    r2 = r2_combined
+  ))
+}
+
+```
+
+## We need to confirm the 3-factor structure first
+Below we are testing the 3-factor portion of the data. To do this, we have subset the data to only include the first 17 items. The first 5 are expected to represent attention, the next 5 internalizing behaviors, and the last 7 externalizing behaviors. Our theorized model is that these items will load onto the scales, but since these items together are supposed to measure psychosocial emotional and behavioral problems, we would probably one one general factor introduce into the model as well. Thus we will specify the following four models:
+
+- One factor categorical CFA model
+- Three factor categorical CFA model
+- Hierarchical model with three factors categorical CFA
+- Bi-factor model with three fators and one general factor categorical CFA
+
+We will then look at how well each model fits the data by comparing the following model fit indices: Chi-Square, degrees of freedom, CFI, TLI, RMSEA, SRMR, and an averaged r^2.
+
+From running the four models, we see something very interesting.
+
+**One factor model**: It looks like it explains the items in an okay or moderate way. The factor loadings for each of the items range from 0.507 to 0.840. Most of the factor loadings are between .6 and .7, so this is an okay fit overall. Nothing looks out of the ordinary for this model- mainly because it is simple.
+
+**Three factor model**: This model has items that correspond to only one factor, and these factors were chosen based on the scales in the original assessment (attention, internalizing, and externalizing). Starting with the factor loadings of each scale- attention has factor loadings that range from 0.687 - 0.862, internalizing 0.586 - 0.830, and externalizing 0.612 - 0.857. Additionally, the covariance among the three factors are pretty high, with A ~~ I = 0.817, A ~~ E = 0.864, and I ~~ E = 0.668. These high correlations could indicate that there is a higher factor in palce.
+
+**Hierarchical three factor model**: This model unfortunately is not much use to us. There are major issues with the factor loadings produced, with the factor loading explaining G and A = 1.028, which is higher than should be possible. This is further reflected with the variance of A, which is -0.058, this means all of the variance of A, plus more, is being explained by G, which should not be possible. These values by default make this model not reliable to interpret.
+
+**Bi-factor three specific factor and one general factor model**: The bi-factor model produced is also problematic. There are no factor loadings present at all for the A factor, this is because the G factor explained so much of the variance from these items, that there was nothing left to explain by the factor A. We can see this by looking at the factor loadings of G for items associated with A, they range from 0.707 to 0.859. 
+
+Therefore, it only makes to compare the model outputs between the general factor and the three factor models:
+
+- General factor model: chisq = 333.522; df = 119; CFI = 0.980; TLI = 0.977; RMSEA = 0.046; SRMR = 0.089; r^2 = 0.457
+- Three factor model: chisq = 182; df = 116; CFI = 0.994; TLI = 0.993; RMSEA = 0.026; SRMR = 0.067; r^2 = 0.527
+
+From the comparison of these model fit indices, we can support the idea that **there are three scales** present in the data and follow the theoretical framework of the assessment.
+
+```{r confirming the three factor sctructure first}
+# Subset the data to only have the first three scales
+sub_dat <- cbind(Attention, Internalizing, Externalizing)
+
+# One general factor model
+one_factor_model <- '
+
+  # Measurement Model general (fixed = 1; free = 16)
+  G =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Factor variance (fixed = 0; free = 1)
+  G ~~ G
+  
+  # p*(p-1)/2 = 17·16/2 = 136
+  # thresholds = 17·(3–1) = 34
+  # moments = 136 + 34 = 170
+  # free params = 16 loadings + 1 variance + 34 thresholds = 51
+  # df = 170 – 51 = 119
+'
+# Specifiy the model
+three_factor_restricted_model <- '
+
+  # Measurement Model (fixed = 3, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Factor variance (free = 3)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  
+  # Factor covarinace (fixed = 3)
+  A ~~ 0*I
+  A ~~ 0*E
+  E ~~ 0*I
+  
+  # p*(p-1)/2 = 17·16/2 = 136
+  # thresholds = 17·(3–1) = 34
+  # moments = 136 + 34 = 170
+  # free params = 14 loadings + 3 variances + 34 thresholds = 51
+  # df = 170 – 51 = 119
+'
+
+
+
+# Specify the model
+three_factor_model <- '
+
+  # Measurement Model (fixed = 3, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Factor variance (free = 3)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  
+  # Factor covarinace (free = 3)
+  A ~~ I
+  A ~~ E
+  E ~~ I
+  
+  # p*(p-1)/2 = 17·16/2 = 136
+  # thresholds = 17·(3–1) = 34
+  # moments = 136 + 34 = 170
+  # free params = 14 loadings + 3 variances + 3 covariances + 34 thresholds = 54
+  # df = 170 – 54 = 116
+'
+
+# Specify the model
+three_factor_model_test <- '
+
+  # Measurement Model (fixed = 3, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + 0*PSC_11 + 0*PSC_13 + 0*PSC_19 + 0*PSC_22 + 0*PSC_27 + 0*PSC_16 + 0*PSC_29 + 0*PSC_31 + 0*PSC_32 + 0*PSC_33 + 0*PSC_34 + 0*PSC_35
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + 0*PSC_4 + 0*PSC_7 + 0*PSC_8 + 0*PSC_9 + 0*PSC_14 + 0*PSC_16 + 0*PSC_29 + 0*PSC_31 + 0*PSC_32 + 0*PSC_33 + 0*PSC_34 + 0*PSC_35
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35 + 0*PSC_4 + 0*PSC_7 + 0*PSC_8 + 0*PSC_9 + 0*PSC_14 + 0*PSC_11 + 0*PSC_13 + 0*PSC_19 + 0*PSC_22 + 0*PSC_27
+  
+  # Factor variance (free = 3)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  
+  # Factor covarinace (free = 3)
+  A ~~ I
+  A ~~ E
+  E ~~ I
+  
+  # p*(p-1)/2 = 17·16/2 = 136
+  # thresholds = 17·(3–1) = 34
+  # moments = 136 + 34 = 170
+  # free params = 14 loadings + 3 variances + 3 covariances + 34 thresholds = 54
+  # df = 170 – 54 = 116
+'
+
+
+# Specify the model
+hierar_three_factor_model <- '
+
+  # Measurement Model (fixed = 3, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Measurement Model Hierarchical (fixed = 0; free = 3)
+  G =~ NA*A + I + E
+  
+  # Factor variance (fixed = 1; free = 3)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  
+  G ~~ 1*G
+  
+  # Factor covarinace (fixed = 3)
+  A ~~ 0*I
+  A ~~ 0*E
+  E ~~ 0*I
+  
+  # p*(p-1)/2 = 17·16/2 = 136
+  # thresholds = 17·(3–1) = 34
+  # moments = 136 + 34 = 170
+  # free params = 14 loadings + 3 second order loadings + 3 variances + 34 thresholds = 54
+  # df = 170 – 54 = 116
+'
+
+
+# Specify the model
+bifactor_three_factor_model <- '
+
+  # Measurement Model (fixed = 3, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Measurement Model general (fixed = 1; free = 16)
+  G =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Factor variance (fixed = 0; free = 4)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  G ~~ G
+  
+  # Factor covarinace (fixed = 6)
+  G ~~ 0*A
+  G ~~ 0*E
+  G ~~ 0*I
+  A ~~ 0*I
+  A ~~ 0*E
+  E ~~ 0*I
+  
+  # p*(p-1)/2 = 17·16/2 = 136
+  # thresholds = 17·(3–1) = 34
+  # moments = 136 + 34 = 170
+  # free params = 14 loadings + 16 loadings + 4 variances + 34 thresholds = 68
+  # df = 170 – 68 = 102
+'
+
+# Fit the models
+one_factor_fit <- cfa(one_factor_model, data = sub_dat, estimator = "WLSMV", ordered = names(sub_dat))
+three_factor_restricted_fit <- cfa(three_factor_restricted_model, data = sub_dat, estimator = "WLSMV", ordered = names(sub_dat))
+three_factor_fit <- cfa(three_factor_model, data = sub_dat, estimator = "WLSMV", ordered = names(sub_dat))
+three_factor_test_fit <- cfa(three_factor_model_test, data = sub_dat, estimator = "WLSMV", ordered = names(sub_dat))
+hierar_three_fit <- cfa(hierar_three_factor_model, data = sub_dat, estimator = "WLSMV", ordered = names(sub_dat))
+bi_three_fit <- cfa(bifactor_three_factor_model, data = sub_dat, estimator = "WLSMV", ordered = names(sub_dat))
+
+
+
+# Check the degrees of freedom
+#summary(one_factor_fit)
+#summary(three_factor_fit)
+#summary(hierar_three_fit)
+#summary(bi_three_fit)
+
+# View the standardized factor loadings and variances
+#standardizedSolution(one_factor_fit)
+#standardizedSolution(three_factor_fit)
+#standardizedSolution(hierar_three_fit)
+#standardizedSolution(bi_three_fit)
+
+# (Optional): View correlation residuals
+#residuals(one_factor_fit, type = "cor")$cov
+#residuals(three_factor_fit, type = "cor")$cov
+
+# Specify the models we want to extract metrics from (we will ignore the models with negative factor variances)
+fit_list <- list(
+   general = one_factor_fit,
+   three_factor_res = three_factor_restricted_fit,
+   #three_factor_test = three_factor_test_fit,
+   three_factor = three_factor_fit,
+   hierarchical = hierar_three_fit,
+   bifactor = bi_three_fit
+   
+)
+
+# Extract metrics from each model
+cfa_metrics <- get_cfa_metrics2(fit_list)
+
+# Transpose the table
+cfa_metrics_t <- round(cfa_metrics$fit_metrics,3) %>%
+  t() 
+
+# Table cleaning
+cfa_metrics_t <- as.data.frame(cfa_metrics_t)
+
+# drop r^2
+cfa_metrics_t <- select(cfa_metrics_t, -`r^2`)
+
+# Rename the variables
+names(cfa_metrics_t) <- c("χ²", "df", "CFI", "TLI", "RMSEA", "SRMR")
+
+# Rename the row names (models)
+row.names(cfa_metrics_t) <- c("One-factor model", "Three factor model (Restricted)","Three factor model", "Hierarchical model", "Bi-factor model")
+
+# Print out the table
+cfa_metrics_t %>%
+  kbl(full_width = F, caption = "Fit of the Five Factor Models on the PSC-17 Data") %>%
+  kable_classic_2() %>%
+  footnote(general = "All χ² goodness-of-fit tests were statistically significant at p <.001. CFI = comparitive fit index; TLI = tucker-lewis index; RMSEA = root mean square error of approximation; SRMR = standardized root mean squared residual")
+
+# Save the output of the first order factor model (three factors)
+three_factor_stand_mod <- standardizedSolution(three_factor_fit)
+
+# Keep only the info we care about
+three_factor_stand_mod2 <- three_factor_stand_mod %>%
+  filter(op == "=~" | op == "~~")
+
+# Extract the rows by what they are
+three_factor_stand_factor_loadings <- three_factor_stand_mod2[1:17, ]
+three_factor_stand_err <- three_factor_stand_mod2[24:40, ]
+
+# Data cleaning
+three_factor_stand_factor_loadings2 <- three_factor_stand_factor_loadings %>%
+  select(Factor = lhs, Item = rhs, Factor_Loading = est.std, p = pvalue) %>%
+  mutate(Factor_Loading = round(Factor_Loading,2))
+
+three_factor_stand_err2 <- three_factor_stand_err %>%
+  select(Item = rhs, Error = est.std) %>%
+  mutate(Error = round(Error, 2))
+
+three_factor_mod_table <- three_factor_stand_factor_loadings2 %>%
+  left_join(three_factor_stand_err2, by = "Item")
+
+```
+
+# Visualize the best fitting model
+```{r visualizing the best fitting model}
+library(semPlot)
+library(semptools)
+
+# Plot the diagram (Make it larger on purpose)
+p <- semPaths(three_factor_fit, 
+         whatLabels = "std",        # Show standardized estimates
+         edge.label.cex = 1.4,       # Size of edge labels (loadings/errors)
+         sizeMan = 5,               # Makes indicator boxes LARGER (default=5)
+         sizeMan2 = 3,              # Controls height (smaller = taller boxes)
+         node.width = 1.8,          # Adjusts node width (wider boxes)
+         border.width = 1.4,        # Thickness of box borders
+         sizeLat = 5,
+         label.cex = 1.3,             # Size of text inside boxes
+         edge.color = "black",      # All lines black
+         edge.width = 1.4,          # Thickness of arrows
+         curve = 2.3,              # Curvature of double-headed arrows
+         rotation = 4,             # Rotate layout
+         intercepts = FALSE,       # Hide intercept triangles
+         thresholds = FALSE,        # Hide threshold triangles
+         mar = c(5, 12, 5, 8),     # Margins (D, L, U, R)
+         shapeMan = "rectangle",   # Ensures boxes are rectangular
+         aspect = 2                # Adjust aspect ratio (higher = wider)
+)
+
+plot(p)
+```
+
+
+
+# Running a EFA-CFA PSC 17 Model
+
+We just so happend to have a similar outcome to a paper by "Behavioral Health Screening in Urban Primary Care Settings:
+Construct Validity of the PSC-17". They found that the three-factor model in their data produced very poor model fit- in ours it actually did not. However, one issue they had that we also have is that the factors are highly correlated with each other. Therefore, the next step should be to see if we can address with using a CFA-EFA type of model. Which is what we will be doing below.
+
+First we need to run an EFA, with the sole purpose of identifying anchor items. These are items that strongly correlate with one of the three scales. That item will then be loaded onto the scales in the subsequent CFA-EFA model, and the remaining items will all be loaded into all subscales, which is the EFA part. The goal is to use this output to see how well these items are fitting our data.
+
+```{r Running a CFA and EFA Hybrid Model on our PSC17}
+# Run categorical EFA with polychoric correlations
+efa_model <- fa(sub_dat, nfactors = 3, rotate = "oblimin", fm = "wls", cor = "poly")
+
+# Display loadings (suppress small values for clarity)
+print(efa_model$loadings, cutoff = 0.3)
+
+# Use this information to fit a CFA-EFA hybrid
+esem_model <- '
+  # Anchor items (fixed to one factor)
+  A =~ PSC_9  # Attention anchor
+  I =~ PSC_27  # Internalizing anchor
+  E =~ PSC_35  # Externalizing anchor
+  
+  # Non-anchor items free to load on all factors
+  A =~ PSC_4 + PSC_7 + PSC_8 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34
+  I =~ PSC_4 + PSC_7 + PSC_8 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34
+  E =~ PSC_4 + PSC_7 + PSC_8 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34
+  
+  # Factors are correlated
+  A ~~ I
+  A ~~ E
+  I ~~ E
+'
+
+# Fit the model for ordinal data
+fit_esem <- cfa(esem_model, data = sub_dat, ordered =  names(sub_dat), estimator = "WLSMV")
+
+# Add this model to compare to the other models
+fit_list <- list(
+   general = one_factor_fit,
+   three_factor_res = three_factor_restricted_fit,
+   three_factor = three_factor_fit,
+   hierarchical = hierar_three_fit,
+   bifactor = bi_three_fit,
+   CFA_EFA = fit_esem
+   
+)
+
+
+# Extract metrics from each model
+cfa_metrics <- get_cfa_metrics2(fit_list)
+
+# Transpose the table
+cfa_metrics_t <- round(cfa_metrics$fit_metrics,3) %>%
+  t() 
+
+# Table cleaning
+cfa_metrics_t <- as.data.frame(cfa_metrics_t)
+
+# drop r^2
+cfa_metrics_t <- select(cfa_metrics_t, -`r^2`)
+
+# Save the standardized solutions
+ESEM_mod_stand_sol <- standardizedSolution(fit_esem)
+
+# Keep only rows we care about
+ESEM_mod_stand_sol2 <- ESEM_mod_stand_sol[1:45,]
+
+# Extract the factor loadings and CI for each subscale
+A_stand_sol <- ESEM_mod_stand_sol2 %>%
+  filter(lhs == "A") %>%
+  mutate(sig = ifelse(0 >= ci.lower & 0 <= ci.upper, '', '*'),
+         Attention = paste0(sig, round(est.std,2), " (",round(ci.lower,2)," to ", round(ci.upper,2),")")) %>%
+  select(items = rhs, Attention)
+
+I_stand_sol <- ESEM_mod_stand_sol2 %>%
+  filter(lhs == "I") %>%
+  mutate(sig = ifelse(0 >= ci.lower & 0 <= ci.upper, '', '*'),
+         Internalizing = paste0(sig, round(est.std,2), " (",round(ci.lower,2)," to ", round(ci.upper,2),")")) %>%
+  select(items = rhs, Internalizing)
+
+E_stand_sol <- ESEM_mod_stand_sol2 %>%
+  filter(lhs == "E") %>%
+  mutate(sig = ifelse(0 >= ci.lower & 0 <= ci.upper, '', '*'),
+         Externalizing = paste0(sig, round(est.std,2), " (",round(ci.lower,2)," to ", round(ci.upper,2),")")) %>%
+  select(items = rhs, Externalizing)
+
+# Bind them into one dataset
+ESEM_mod_stand_sol3 <- A_stand_sol %>%
+  full_join(I_stand_sol, by = "items") %>%
+  full_join(E_stand_sol, by = "items") %>%
+  left_join(rename(PSC_35_labels, items = item), by = "items")
+
+# Clean up the data a bit
+ESEM_mod_stand_sol4 <- ESEM_mod_stand_sol3 %>%
+  select(items, label, Attention, Internalizing, Externalizing) %>%
+  mutate(items = gsub("PSC_","",items))
+
+# Define the desired order (without PSC_ prefix)
+desired_order <- c("4", "7", "8", "9", "14", "11", "13", "19", "22", "27", "16", "29", "31", "32", "33", "34", "35")
+
+# Reorder the dataframe
+ESEM_mod_stand_sol4 <- ESEM_mod_stand_sol4 %>%
+  mutate(items = factor(items, levels = desired_order)) %>%
+  arrange(items)
+
+# Print a table of our results from the cross-loadings
+ESEM_mod_stand_sol4 %>%
+  kbl(full_width = F, caption = "Standardized Factor Loadings of a CFA-EFA Model for the PSC-17") %>%
+  kable_classic()
+
+
+# Extract the variance and covariance of the factors
+inspect(fit_esem, "cor.lv") %>%
+  round(3) %>%
+  kbl(full_width = F, caption = "Correlation of the Factors") %>%
+  kable_classic_2()
+
+```
+
+
+# Run an EFA on all items
+- This was a suggestion by Paulina Kulesz
+- We will be doing this through two approaches, one that uses PCA and the other that does not.
+- We will be running this on all PSC-35 items from 6-16 year olds since each of these items are appropriate for this age group (in contrast to three items that are not appropriate to younger children).
+
+Below we are running a parallel analysis to indicate how many factors are within our data. We can do this by using both the principal component (PC) and the Principal Factor Analysis (FA) approach and then compare their differences. 
+
+
+```{r running a parallel analysis on all items}
+# Order the PSC so that the specific factors are showed first rather than orded by number
+PSC_items_only_6_16_ordered <- PSC %>% 
+  filter(Age >= 6 & Age < 17) %>% 
+  select(c(names(Internalizing), names(Externalizing), names(Attention), names(Other)))
+
+# Set seed
+set.seed(123)
+
+# Run the parallel analysis (identifies number of suitable factor from the data correlation matrix) 
+# fa = principal axis factor analysis; this produces eigenvalues that represent the common variance explained by each factor
+# poly = polychoric correlations
+parallel_result_fa_pc <- fa.parallel(polychoric(PSC_items_only_6_16_ordered)$rho, n.obs = nrow(PSC_items_only_6_16_ordered),fa = "both", fm = "wls", cor = "poly")
+
+# Print out the results
+parallel_result_fa_pc
+
+```
+
+Here we will use a for loop to generate the outcome of running EFA models with different level of factors. 
+
+
+```{r running an EFA based on the parallel analysis results}
+# Create a list to store the model information
+EFA_mod_list <- list()
+
+# Max number of factors to be used in EFA
+max_num = 5
+
+# Fit EFA models
+for(ii in 2:max_num){
+  EFA_mod_list[[ii]] <- fa(r= PSC_items_only_6_16_ordered, nfactors = ii, fm = "wls", cor = "poly", rotate = "oblimin")
+  names(EFA_mod_list)[[ii]] <- paste0("EFA Model ",ii)
+}
+
+# Print out model information (right now just for 3 components)
+EFA_mod_list[["EFA Model 3"]]$loadings
+
+# Print out model information (right now just for 4 components)
+#EFA_mod_list[["EFA Model 4"]]$loadings
+```
+
+
+# What to do with the other 18 items?
+Above we went ahead and compared different CFA to look at the data structure of the 17 items associated with scales. Our next task is to figure out what to do with the remaining 18 items. According to Dr. Francis, we can create a CFA and EFA hybrid model, where the first 17 items are loaded to the structure we believe to be correct- then for the remaining 18 items, we allow them to load to all factors in the model and potentially to other factors as well and see how that changes the fit of the model. 
+
+However, I think we first need to figure out, how many factors we we think the other 18 items may be able to create. To do this we can run a parallel analysis on these items, and it will produce eigenvalues in which we can compare to simulate eigenvalues. For each case where an eigenvalue is larger than its corresponding simulated eigenvalue, then that reflects a factor possible existing in the data.   
+
+Below we will run the `fa.parallel()` function and have the polychoric correlations of the other 18 items as the data. We will provide the number of observations used in the creation of the correlation matrix and we will specify that we want factor analysis (fa = "fa") and that our factor method will use weighted least squares ('wls'), which works best with large sample categorical data. 
+
+There are basically three different approaches to identify the number of factors in our data.
+
+- 1. Use the output from the parrallel analysis that returns 5 factors.
+- 2. Use information from the scree plot, which looks like the elbow occurs at factor 3
+- 3. Use Kaiser's rule, which counts the number of eigen values greater than 1, therefore 2 factors
+
+```{r running parallel analysis on the eighteen items}
+# Set seed
+set.seed(123)
+
+# Run the parallel analysis (identifies number of suitable factor from the data correlation matrix) 
+# fa = principal axis factor analysis; this produces eigenvalues that represent the common variance explained by each factor
+# poly = polychoric correlations
+parallel_result <- fa.parallel(polychoric(Other_num)$rho, n.obs = nrow(Other_num),fa = "fa", fm = "wls", cor = "poly")
+
+# Print out the results
+parallel_result
+```
+
+# Running EFA on the 18 items using 2,3 and 5 factors
+There are two different ways we can run the EFA below. We will go with the easiest approach which uses the `fa()` function from the psych package. In this function we will specify the dataset, the factor method (weighted least squares), the correlation choice (polychoric for categorical variables), and the rotation type (oblique rotation, used when we suspect factors to correlate with each other).
+
+Here are my impressions of these outputs. By far the best candidate would be **2 factors** to explain the data. This judgment was made from looking at the standardized factor loadings, communality, variance explained by the EFA model, model fit indices, theoretical considerations, and future plans to run a CFA-EFA hybrid model. 
+
+Let's begin with the theoretical considerations. The other 18 items are not really looked at in the literature, but are still present in the PSC-35. Therefore, it is reasonable to run an EFA on these items since we are unsure of what their correlation structure is. However, while 2 and 3 factors across the 18 items seems reasonable, having 5 factors for these data seems excessive, especially since there are 18 items. Ideally we would want 4-5 items for each factor, so to have at least 5 factors would require 20 items, 4 of which strongly correspond to a factor for all factors, which seems unlikely. 
+
+Next let's discuss our plan to run a CFA-EFA hybrid model. This model is complex since there are many cross-loadings introduced, which increases the chances of overparamatization, meaning having too much going on in our model. Thus, this puts us in favor of having 2 or 3 factors in this data and anything more is almost guaranteed to cause problems in upcoming analyses.
+
+With that mentioned, we can remove the idea of using a 5 factor approach, therefore what remains is deciding between 2 or 3 factors. By comparing model fit indices across both EFA (RMSE, TLI, and BIC), we see that both models perform around the same- therefore by default we can choose the 2 factor model as the best one. 
+
+
+```{r running an EFA on the other eighteen items}
+# Fit EFA models
+efa_2 <- fa(r= Other_num, nfactors = 2, fm = "wls", cor = "poly", rotate = "oblimin")
+efa_3 <- fa(r= Other_num, nfactors = 3, fm = "wls", cor = "poly", rotate = "oblimin")
+efa_5 <- fa(r= Other_num, nfactors = 5, fm = "wls", cor = "poly", rotate = "oblimin")
+
+# Compare fit indices
+cat("2 Factors:\n")
+efa_2$loadings
+round(efa_2$communality,2)
+round(efa_2$Vaccounted,2)
+round(efa_2$RMSEA,2)
+round(efa_2$TLI,2)
+round(efa_2$BIC,2)
+
+cat("3 Factors:\n")
+efa_3$loadings
+round(efa_3$communality,2)
+round(efa_3$Vaccounted,2)
+round(efa_3$RMSEA,2)
+round(efa_3$TLI,2)
+round(efa_3$BIC,2)
+
+cat("5 Factors:\n")
+efa_5$loadings
+round(efa_5$communality,2)
+round(efa_5$Vaccounted,2)
+round(efa_5$RMSEA,2)
+round(efa_5$TLI,2)
+round(efa_5$BIC,2)
+
+```
+# Running a CFA-EFA Hybrid model
+This portion is where things begin to get complicated. We will now be running a CFA-EFA hybrid model. This means that we will be using all 35-items from our PSC-35 but 17 of those items will undergo CFA while the remaining 18 items will undergo EFA, all within the same model! Additionally, the 18 other items will be loaded to the three existing scales within the data (attention, internalizing, externalizing) plus the two factors that were discovered when running the EFA on the 18 items alone. Why do this? Well the goal now is to further understand our data to basically conduct **scale development**.
+
+**Scale development**: This is the process of generating or refining a measurement instrument to ensure that it is reliable and that it measures what we believe it to be measuring (construct validity). The process of scale development typically involves a) generating items, b) using EFA and CFA to explore the factor structure of the data , c) item selection, which is retaining items that are meaningful, d) reliability and validity testing, and e) refinement of the scale based on the results from this process. 
+
+In our case, we are doing several aspects of scale development with the exception of generating items and having a refinement aspect. Everything else however we will be engaging in and the reason why we are doing this is to make sure that the data being captured by the PSC-35 in our sample is being interpreted properly! 
+
+The goal from running this model is to arrive at a final model that best explains the data and we will be doing that by looking at the residual correlations produced by the model to identify bad items and then constraining those items to 0 to see how that impacts full model fit.
+
+The model below is **not expected to fit well**. Just by looking at the number of factor loadings and cross-loadings plus an EFA taking place, there is a lot of constraining on the model which will probably produce a bad fit. This would mean that standard errors may not be produced, we may have not positively defined factor variances, and have items that are just not explained well by the model. We have also specified the CFA protion of the model by fixing the factor variances to 1 instead of the first item factor loading to produce an interpretable variance covariance matrix with them and the other 2 EFA factors.
+
+Therefore, to identify bad items, we will look at their factor loadings in the models (specifically we are focusing on the Other items since the 17 items from the CFA some sections back all showed to be good). Bad items mean that they have low communalities (basically low r^2 or a small proportion of their variance is being explained), have a small standardized factor loading size, or are just not significant. We can identify items that are overall bad and items that are bad when cross-loaded. Identifying these bad items and constraining them can then help us produce a better model in our next attempt.
+
+We see that this model was in fact bad, and that estimated variances where not positively defined (this means that we either do not have enough data, have too many high correlations, or the model is overparameterized). The variance and covariance matrix for the factors is extremely concerning- there should be no reason why there are negative correlations between the CFA and EFA factors, especially since all the behaviors in the PSC-35 are negative, thus we would expect the frequency of negative behaviors to correlate positively with each other not negatively. Also, we see that the bivariate correlation of A and f1 is = -0.997, which is basically -1. This is a huge red flag that something went wrong and explains the not positiveluy defined error.
+
+Lastly, we can inspect the items and identify bad ones, which by constraining to 0 will remove the errors from our model just mentioned. By looking at how much variance is being explained, we see that PSC_20, PSC21, and PSC_22 are being poorly explained by this model. 
+
+We can also identify bad cross-loadings by picking out those that were not significant. Below we used code to identify 24 cases where cross-loadings did not signifcantly load well to A, I, or E. Thus these items will be constrained to 0 for the cross-loading section in the next model.
+
+
+```{r CFA and EFA hybrid model part 1}
+```
+# Run the hybrid model (EFA = 1)
+CFA_EFA_hybrid_model <- '
+
+  # Measurement Model (free = 17)
+  A =~ NA*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ NA*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ NA*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Variances among the three factors (fixed = 3)
+  A ~~ 1*A
+  I ~~ 1*I
+  E ~~ 1*E
+  
+  # EFA Model by Introducing Cross loadings (18 items) 
+  A =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  I =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  E =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+
+
+ # Retain the largest of the three loadings (or statistically significant to zero)
+ # Impose obvious restrictions first on the cross-loadings, wait to make the more ambiguous ones to clear
+    
+
+
+  # EFA block for one factor
+  efa("efa1")*f1 =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  
+# Run the hybrid model (EFA = 2)
+CFA_EFA_hybrid_model2 <- '
+
+  # Measurement Model (free = 17)
+  A =~ NA*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ NA*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ NA*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Variances among the three factors (fixed = 3)
+  A ~~ 1*A
+  I ~~ 1*I
+  E ~~ 1*E
+  
+  # EFA Model by Introducing Cross loadings (18 items) 
+  A =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  I =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  E =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+
+  # EFA block for two factors
+  efa("efa1")*f1 +
+  efa("efa1")*f2 =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+    
+'
+
+
+# Run the hybrid model using the sem() function
+esem_fit <- sem(model = CFA_EFA_hybrid_model, data = dat, estimator = "WLSMV", ordered = TRUE,  rotation = "geomin")
+esem_fit2 <- sem(model = CFA_EFA_hybrid_model2, data = dat, estimator = "WLSMV", ordered = TRUE,  rotation = "geomin")
+
+# Summary of the models
+summary(esem_fit)
+summary(esem_fit2)
+
+# Run output of the full model (standarized)
+standardizedSolution(esem_fit)
+standardizedSolution(esem_fit2)
+
+# Inspect the latent variable (Factor) covariance matrix
+lavInspect(esem_fit, "cov.lv")
+lavInspect(esem_fit2, "cov.lv")
+
+# Inspect communalities of items
+sort(round(lavInspect(esem_fit, "r2"),2))
+
+# Find poor cross-loadings
+as.data.frame(standardizedSolution(esem_fit))[21:74,] %>% # Pick the rows where the cross-loadings are
+  filter(pvalue > .05)
+
+
+In this next attempt we modify the model specifications by constraining the items PSC_30, PSC_21, and PSC_23 to 0 for the EFA and cross-loading portion. Additionally cross-loadings that were not significant in the previous models were also contrainted to 0 here.  
+
+In this model ouput, we see that we addressed several previous issues, which indicates that this model overall is better. However, we still have an issue with the correlation of the factors. We see that the correlation between f2 and A is -1.037. This should no be possible! Additionally the correlations between f1 and the CFA scales is near 0- this hints that the issue is the EFA block and that we should change it from 2 factors down to 1.
+
+```{r CFA and EFA hybrid model part 2}
+
+```
+# Specify the second CFA-EFA hybrid model
+CFA_EFA_hybrid_model2 <- '
+  # CFA portion
+  A =~ NA*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ NA*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ NA*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  A ~~ 1*A
+  I ~~ 1*I
+  E ~~ 1*E
+  
+  # Cross-loadings (all items listed, non-significant p > 0.05)
+  A =~ PSC_1 + PSC_2 + 0*PSC_3 + 0*PSC_5 + 0*PSC_6 + PSC_10 + PSC_12 + PSC_15 + 0*PSC_17 + 0*PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + 0*PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + 0*PSC_30
+  I =~ PSC_1 + PSC_2 + 0*PSC_3 + PSC_5 + 0*PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + PSC_30
+  E =~ 0*PSC_1 + 0*PSC_2 + 0*PSC_3 + 0*PSC_5 + 0*PSC_6 + PSC_10 + 0*PSC_12 + PSC_15 + PSC_17 + PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + PSC_30
+  
+  # EFA portion (testing 2 factors)
+  efa("efa1")*f1 +
+  efa("efa1")*f2 =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+'
+
+# Run the CFA-EFA hybrid model
+esem_fit2 <- sem(model = CFA_EFA_hybrid_model2, data = dat, estimator = "WLSMV", ordered = TRUE, rotation = "geomin")
+
+# Run output of the full model (standarized)
+standardizedSolution(esem_fit2)
+
+# Inspect the latent variable (Factor) covariance matrix
+lavInspect(esem_fit2, "cov.lv")
+
+# Inspect communalities of items
+sort(round(lavInspect(esem_fit2, "r2"),2))
+
+
+Here we see something promising! There are no errors that are reported by the model, indicating that reducing the factor of the EFA from 2 to 1 has stabilized the model. However, there are still issues with our data- we still have heywood cases (standardized loadings greater than 1, negative loadings, potentially weak items, and non-significant cross loadings). 
+
+Starting with the EFA, we will identify and constrain any items that are problematic for the next model. This will include items that are a) not significant, b) have standardized factor loadings greater than 1, or c) have standardized factor loadings that are negative. With this approach we find that these items are bad:
+
+- 1,2,10,12,15,17,18,24,28,30 
+
+Next we will do the same thing but this time with the cross-loadings. We will remove the following from each of the three original factors
+A: 1, 10, 12, 15, 28
+I: 17, 18, 30
+E: 10, 15, 17, 18
+
+
+
+```{r CFA and EFA hybrid model part 3}
+```
+
+# Specify the second CFA-EFA hybrid model
+CFA_EFA_hybrid_model3 <- '
+  # CFA portion
+  A =~ NA*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ NA*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ NA*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  A ~~ 1*A
+  I ~~ 1*I
+  E ~~ 1*E
+  
+  # Cross-loadings (all items listed, non-significant p > 0.05)
+  A =~ PSC_1 + PSC_2 + 0*PSC_3 + 0*PSC_5 + 0*PSC_6 + PSC_10 + PSC_12 + PSC_15 + 0*PSC_17 + 0*PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + 0*PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + 0*PSC_30
+  I =~ PSC_1 + PSC_2 + 0*PSC_3 + PSC_5 + 0*PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + PSC_30
+  E =~ 0*PSC_1 + 0*PSC_2 + 0*PSC_3 + 0*PSC_5 + 0*PSC_6 + PSC_10 + 0*PSC_12 + PSC_15 + PSC_17 + PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + PSC_30
+  
+  # EFA portion (testing 1 factor)
+  efa("efa1")*f1 =~ PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+'
+
+# Run the CFA-EFA hybrid model
+esem_fit3 <- sem(model = CFA_EFA_hybrid_model3, data = dat, estimator = "WLSMV", ordered = TRUE, rotation = "geomin")
+
+# Run output of the full model (standarized)
+standardizedSolution(esem_fit3)
+
+# Inspect the latent variable (Factor) covariance matrix
+lavInspect(esem_fit3, "cov.lv")
+
+# Inspect communalities of items
+sort(round(lavInspect(esem_fit3, "r2"),2))
+
+# Investigating the EFA portion (bad)
+as.data.frame(standardizedSolution(esem_fit3)) %>%
+  filter(lhs == "f1" & (pvalue > .05 | est.std < 0 | est.std > 1))
+
+# Investigating the EFA portion (good)
+as.data.frame(standardizedSolution(esem_fit3)) %>%
+  filter(lhs == "f1" & pvalue < .05 & est.std > 0 & est.std < 1)
+
+# Investigate the cross-loadings that are bad (remove the constrained to 0 ones)
+as.data.frame(standardizedSolution(esem_fit3))[21:74,] %>%
+  filter(est.std != 0 & (pvalue > .05 | est.std < 0 | est.std > 1))
+
+# Investigate the cross-loadings that are good (remove the constrained to 0 ones)
+as.data.frame(standardizedSolution(esem_fit3))[21:74,] %>%
+  filter(est.std != 0 & pvalue < .05 & est.std > 0 & est.std < 1)
+
+
+
+Now we can run our 4th and hopefully final model
+
+```{r CFA and EFA hybrid model part 4}
+```
+
+# Specify the second CFA-EFA hybrid model
+CFA_EFA_hybrid_model4 <- '
+  # CFA portion
+  A =~ NA*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ NA*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ NA*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  A ~~ 1*A
+  I ~~ 1*I
+  E ~~ 1*E
+  # Cross-loadings (retain good: significant, positive, < 1; constrain bad)
+  A =~ 0*PSC_1 + PSC_2 + 0*PSC_3 + 0*PSC_5 + 0*PSC_6 + 0*PSC_10 + 0*PSC_12 + 0*PSC_15 + 0*PSC_17 + 0*PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + 0*PSC_24 + 0*PSC_25 + 0*PSC_26 + 0*PSC_28 + 0*PSC_30
+  I =~ PSC_1 + PSC_2 + 0*PSC_3 + PSC_5 + 0*PSC_6 + PSC_10 + PSC_12 + PSC_15 + 0*PSC_17 + 0*PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + 0*PSC_30
+  E =~ 0*PSC_1 + 0*PSC_2 + 0*PSC_3 + 0*PSC_5 + 0*PSC_6 + 0*PSC_10 + 0*PSC_12 + 0*PSC_15 + 0*PSC_17 + 0*PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + PSC_24 + 0*PSC_25 + 0*PSC_26 + PSC_28 + PSC_30
+  # EFA portion (constrain bad items: PSC_1, PSC_2, PSC_10, PSC_12, PSC_15, PSC_17, PSC_18, PSC_24, PSC_28, PSC_30)
+  efa("efa1")*f1 =~ 0*PSC_1 + 0*PSC_2 + PSC_3 + PSC_5 + PSC_6 + 0*PSC_10 + 0*PSC_12 + 0*PSC_15 + 0*PSC_17 + 0*PSC_18 + 0*PSC_20 + 0*PSC_21 + 0*PSC_23 + 0*PSC_24 + PSC_25 + PSC_26 + 0*PSC_28 + 0*PSC_30
+'
+
+# Run the CFA-EFA hybrid model
+esem_fit4 <- sem(model = CFA_EFA_hybrid_model4, data = dat, estimator = "WLSMV", ordered = TRUE, rotation = "geomin")
+
+# Run output of the full model (standarized)
+standardizedSolution(esem_fit4)
+
+# Inspect the latent variable (Factor) covariance matrix
+lavInspect(esem_fit4, "cov.lv")
+
+# Inspect communalities of items
+sort(round(lavInspect(esem_fit3, "r2"),2))
+
+# Investigating the EFA portion (bad)
+as.data.frame(standardizedSolution(esem_fit3)) %>%
+  filter(lhs == "f1" & (pvalue > .05 | est.std < 0 | est.std > 1))
+
+# Investigating the EFA portion (good)
+as.data.frame(standardizedSolution(esem_fit3)) %>%
+  filter(lhs == "f1" & pvalue < .05 & est.std > 0 & est.std < 1)
+
+# Investigate the cross-loadings that are bad (remove the constrained to 0 ones)
+as.data.frame(standardizedSolution(esem_fit3))[21:74,] %>%
+  filter(est.std != 0 & (pvalue > .05 | est.std < 0 | est.std > 1))
+
+# Investigate the cross-loadings that are good (remove the constrained to 0 ones)
+as.data.frame(standardizedSolution(esem_fit3))[21:74,] %>%
+  filter(est.std != 0 & pvalue < .05 & est.std > 0 & est.std < 1)
+
+
+Below we will be exploring four categorical **confirmatory factor models (CFA)** for the PSC-35. For these types of models, we do **not** need to specify the indicator residuals or else the model will fail. 
+
+```{r specifying our CFA models, echo = T}
+# A general model
+general_model <- '
+  # Measurement Model (fixed = 1; free = 34)
+  G =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+
+  # Factor variance (free = 1)
+  G ~~ G
+
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 34 loadings + 1 variance + 70 thresholds = 105
+  # df = 665 – 105 = 560
+'
+
+# A four factor model  
+first_four_model <- '
+
+  # Measurement Model (fixed = 4, free = 31)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  O =~ 1*PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # Factor variance (free = 4)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  O ~~ O
+  
+  # Factor covarinace (free = 6)
+  A ~~ I
+  A ~~ E
+  A ~~ O
+  
+  E ~~ I
+  E ~~ O
+  
+  I ~~ O
+  
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 31 loadings + 4 variances + 6 covariances + 70 thresholds = 111
+  # df = 665 – 111 = 554
+'
+
+
+  
+# Hierarchical model (4 factors)
+hierar_four_model <- '
+
+  # Measurement Model (fixed = 4, free = 31)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  O =~ 1*PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # Higher order measurement model (free = 4)
+  G =~ NA*A + I + E + O
+  
+  # First order factor variances (free = 4)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  O ~~ O
+  
+  # Higher order Factor variance (fixed = 1)
+  G ~~ 1*G
+  
+  # Factor covarinace (fixed = 6)
+  A ~~ 0*I
+  A ~~ 0*E
+  A ~~ 0*O
+  
+  E ~~ 0*I
+  E ~~ 0*O
+  
+  I ~~ 0*O
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 31 loadings + 4 higher order loadings + 4 first order variances + 70 thresholds = 109
+  # df = 665 – 109 = 556
+'  
+  
+# Hierarchical model (3 factors)
+hierar_three_model <- '
+
+  # Measurement Model (fixed = 4, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Higher order measurement model (free = 3 + 18)
+  G =~ NA*A + I + E + PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # First order factor variances (free = 3)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  
+  # Higher order Factor variance (fixed = 1)
+  G ~~ 1*G
+  
+  # Factor covarinace (fixed = 3)
+  A ~~ 0*I
+  A ~~ 0*E
+  
+  E ~~ 0*I
+  
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 14 loadings + 18 loadings + 3 higher order loadings + 3 first order variances + 70 thresholds = 108
+  # df = 665 – 108 = 557
+' 
+
+# Bifactor model (4 factors)
+bifac_four_model <- '
+
+  # Specific Factors Measurement Model (fixed = 4, free = 31)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  O =~ 1*PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # General Factor Measurement Model (fixed = 1; free = 34)
+  G =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # First order factor variances (free = 4)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  O ~~ O
+  
+  # Higher order Factor variance (free = 1)
+  G ~~ G
+  
+  # Specific Factor covarinace (fixed = 6)
+  A ~~ 0*I
+  A ~~ 0*E
+  A ~~ 0*O
+  
+  E ~~ 0*I
+  E ~~ 0*O
+  
+  I ~~ 0*O
+  
+  # General and Specific Factor covariance (fixed = 4)
+  G ~~ 0*A
+  G ~~ 0*I
+  G ~~ 0*E
+  G ~~ 0*O
+  
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 31 loadings + 34 loadings + 4 first order loadings + 1 higher order variance + 70 thresholds = 140
+  # df = 665 – 140 = 525
+'
+
+# Bifactor model (3 factors)
+bifac_three_model <- '
+
+  # Specific Factors Measurement Model (fixed = 4, free = 14)
+  A =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+
+  
+  # General Factor Measurement Model (fixed = 1; free = 34)
+  G =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # First order factor variances (free = 3)
+  A ~~ A
+  I ~~ I
+  E ~~ E
+  
+  # Higher order Factor variance (free = 1)
+  G ~~ G
+  
+  # Specific Factor covarinace (fixed = 6)
+  A ~~ 0*I
+  A ~~ 0*E
+  
+  E ~~ 0*I
+  
+  # General and Specific Factor covariance (fixed = 4)
+  G ~~ 0*A
+  G ~~ 0*I
+  G ~~ 0*E
+  
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 14 loadings + 34 loadings + 3 specifc factor variances + 1 general factor variance + 70 thresholds = 122
+  # df = 665 – 122 = 543
+'
+
+
+
+# paste0(names(Attention), collapse = " + ")
+# paste0(names(Internalizing), collapse = " + ")
+# paste0(names(Externalizing), collapse = " + ")
+# paste0(names(Other), collapse = " + ")
+# Bi-factor model
+  
+```
+
+
+
+```{r run the CFA models}
+general_fit <- cfa(general_model, data = dat, estimator = "WLSMV", ordered = names(dat))
+first_four_fit <- cfa(first_four_model, data = dat, estimator = "WLSMV", ordered = names(dat))
+hirar_four_fit <- cfa(hierar_four_model, data = dat, estimator = "WLSMV", ordered = names(dat)) # TRASH
+hierar_three_fit <- cfa(hierar_three_model, data = dat, estimator = "WLSMV", ordered = names(dat))
+bifac_four_fit <- cfa(bifac_four_model, data = dat, estimator = "WLSMV", ordered = names(dat)) 
+bifac_three_fit <- cfa(bifac_three_model, data = dat, estimator = "WLSMV", ordered = names(dat))
+
+
+standardizedSolution(general_fit)
+standardizedSolution(first_four_fit)
+standardizedSolution(hirar_four_fit) # TRASH
+standardizedSolution(hierar_three_fit)
+standardizedSolution(bifac_four_fit)
+standardizedSolution(bifac_three_fit)
+
+```
+
+
+
+```{r run the model comparisons for the PSC35}
+# Model comparison
+library(kableExtra)
+
+# Place all cfa metrics within a list
+fit_list <- list(
+   general = general_fit,
+   four_factor = first_four_fit,
+   three_hier = hierar_three_fit,
+   three_bi = bifac_three_fit,
+   four_her = hirar_four_fit
+   #four_bi = bifac_four_fit # failed to converge
+)
+
+# Extract metrics from each model
+cfa_metrics <- get_cfa_metrics2(fit_list)
+
+# Transpose the table
+cfa_metrics_t <- round(cfa_metrics$fit_metrics,3) %>%
+  t() 
+
+# Table cleaning
+cfa_metrics_t <- as.data.frame(cfa_metrics_t)
+
+# drop r^2
+cfa_metrics_t <- select(cfa_metrics_t, -`r^2`)
+
+# Rename the variables
+names(cfa_metrics_t) <- c("χ²", "df", "CFI", "TLI", "RMSEA", "SRMR")
+
+# Rename the row names (models)
+row.names(cfa_metrics_t) <- c("One-factor model", 
+                              "First-order 4-factor model",
+                              "Hierarchical 3-factor model",
+                              "Bi-factor 3-factor model",
+                              "Hierarchical 4-factor model")
+
+# Print out the table
+cfa_metrics_t %>%
+  kbl(full_width = F, caption = "Fit of the Six Factor Models on the PSC-35 Data") %>%
+  kable_classic_2() %>%
+  footnote(general = "All χ² goodness-of-fit tests were statistically significant at p <.001. CFI = comparitive fit index; TLI = tucker-lewis index; RMSEA = root mean square error of approximation; SRMR = standardized root mean squared residual")
+
+
+```
+
+# EFA TIME
+
+```{r running a categorical exploratory factor analysis on the PSC 17}
+# Identify the number of factors in the data
+fa_result2 <- fa.parallel(polychor_cor2$rho, n.obs = nrow(dat2), fm = "wls", fa = "fa") # wls = weighted least squares
+
+# Extract eigenvalues
+actual_eigenvalues2 <- fa_result2$fa.values  # Eigenvalues from your data
+random_eigenvalues2 <- fa_result2$fa.sim  # Mean eigenvalues from random data
+
+# Create a data frame to compare them
+eigen_comparison2 <- data.frame(
+  Factor = 1:length(actual_eigenvalues2),
+  Actual_Eigenvalues = actual_eigenvalues2,
+  Random_Eigenvalues = random_eigenvalues2
+)
+
+# Print the first few eigenvalues for comparison
+eigen_comparison2[1:10, ] %>%
+  round(3) %>%
+  kbl() %>%
+  kable_classic(full_width = F)
+
+# Let's test 3 factors
+efa3_2 <- fa(polychor_cor2$rho, nfactors = 3, n.obs =  nrow(dat), 
+           rotate = "promax", fm = "wls") 
+
+# Now let's view their factor loadings
+print(efa3_2$loadings, digits = 2, cut = 0.3) #WLS1 = Externalizing, # WLSE2 = Internalizing; # WLSE3 = Attention
+
+
+
+#The loadings show partial alignment with the intended structure but also significant deviations, suggesting the items   may not fully function as intended or may measure different constructs in Zambia:
+
+# The PSC-17 items are not fully working as intended in Zambia. Internalizing (WLS2) and externalizing (WLS1) scales are relatively robust, but attention (WLS3) is fragmented, with PSC_4 and PSC_14 loading on externalizing and internalizing factors, respectively, and cross-loadings for PSC_7 and PSC_8. This suggests the items may measure overlapping or different constructs in Zambia, likely due to cultural differences in symptom expression or reporting. Proceed with CFA to confirm the 3-factor structure, explore the 18 “other” items separately, and consult local stakeholders to interpret attention items’ misalignment. Share the CFA fit indices and loadings or the “other” items’ EFA results for further guidance!
+```
+
+
+```{r running a categorical exploratpry factor analysis}
+# Identify the number of factors in the data
+fa_result <- fa.parallel(polychor_cor$rho, n.obs = nrow(dat), fm = "wls", fa = "fa") # wls = weighted least squares
+
+# Extract eigenvalues
+actual_eigenvalues <- fa_result$fa.values  # Eigenvalues from your data
+random_eigenvalues <- fa_result$fa.sim  # Mean eigenvalues from random data
+
+# Create a data frame to compare them
+eigen_comparison <- data.frame(
+  Factor = 1:length(actual_eigenvalues),
+  Actual_Eigenvalues = actual_eigenvalues,
+  Random_Eigenvalues = random_eigenvalues
+)
+
+# Print the first few eigenvalues for comparison
+eigen_comparison[1:10, ] %>%
+  round(3) %>%
+  kbl() %>%
+  kable_classic(full_width = F)
+
+# Let's test 3 factors
+efa3 <- fa(polychor_cor$rho, nfactors = 3, n.obs =  nrow(dat), 
+           rotate = "promax", fm = "wls") 
+
+# Let's test 4 factors
+efa4 <- fa(polychor_cor$rho, nfactors = 4, n.obs =  nrow(dat), 
+           rotate = "promax", fm = "wls") 
+
+# Show the output of both models (efa4 > efa3)
+efa3
+#efa4
+
+# Now let's view their factor loadings
+print(efa3$loadings, digits = 2, cut = 0.3)
+#print(efa4$loadings, digits = 2, cut = 0.3)
+```
+
+```{r newer model based on the EFA}
+# Hierarchical model (2 factors)
+hierar_two_model <- '
+
+  # Measurement Model (fixed = 2, free = 10)
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+  
+  # Higher order measurement model (free = 2 + 23)
+  G =~ NA*I + E + PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30 + PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14
+  
+  # First order factor variances (free = 2)
+  I ~~ I
+  E ~~ E
+  
+  # Higher order Factor variance (fixed = 1)
+  G ~~ 1*G
+  
+  # Factor covarinace (fixed = 1)
+  E ~~ 0*I
+  
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 10 loadings + 23 loadings + 2 higher order loadings + 2 first order variances + 70 thresholds = 107
+  # df = 665 – 107 = 558
+' 
+
+# Bifactor model (3 factors)
+bifac_two_model <- '
+
+  # Specific Factors Measurement Model (fixed = 2, free = 10)
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27
+  E =~ 1*PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35
+
+  
+  # General Factor Measurement Model (fixed = 1; free = 34)
+  G =~ 1*PSC_4 + PSC_7 + PSC_8 + PSC_9 + PSC_14 + PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29 + PSC_31 + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_1 + PSC_2 + PSC_3 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_20 + PSC_21 + PSC_23 + PSC_24 + PSC_25 + PSC_26 + PSC_28 + PSC_30
+  
+  # First order factor variances (free = 2)
+  I ~~ I
+  E ~~ E
+  
+  # Higher order Factor variance (free = 1)
+  G ~~ G
+  
+  # Specific Factor covarinace (fixed = 1)
+  E ~~ 0*I
+  
+  # General and Specific Factor covariance (fixed = 2)
+  G ~~ 0*I
+  G ~~ 0*E
+  
+  
+  # p*(p-1)/2 = 35·34/2 = 595
+  # thresholds = 35·(3–1) = 70
+  # moments = 595 + 70 = 665
+  # free params = 10 loadings + 34 loadings + 2 specifc factor variances + 1 general factor variance + 70 thresholds = 117
+  # df = 665 – 117 = 548
+'
+
+```
+
+```{r run the new CFA models based on the EFA results}
+hierar_two_fit <- cfa(hierar_two_model, data = dat, estimator = "WLSMV", ordered = names(dat))
+bifac_two_fit <- cfa(bifac_two_model, data = dat, estimator = "WLSMV", ordered = names(dat))
+```
+
+```{r check how well all the CFA models compare to one another}
+
+# Place all cfa metrics within a list
+fit_list <- list(
+   general = general_fit,
+   four_factor = first_four_fit,
+   four_hier = hirar_four_fit,
+   three_hier = hierar_three_fit,
+   four_bi = bifac_four_fit,
+   three_bi = bifac_three_fit,
+   two_hier = hierar_two_fit,
+   two_bi = bifac_two_fit
+)
+
+# Extract metrics from each model
+cfa_metrics <- get_cfa_metrics2(fit_list)
+
+# Compare metrics
+#metric_comparison <- compare_metrics2(cfa_metrics)
+
+round(cfa_metrics$fit_metrics,3)
+```
