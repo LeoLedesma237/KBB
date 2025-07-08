@@ -2,7 +2,7 @@
 # Run the first 23 lines of code
 # After the data have been imported and scored, run the first 20 lines of code
 # Run the remaining lines of code, manually score, then rerun the remaining again 
-
+# https://github.com/LeoLedesma237/KBB/wiki/KBB-Matching-Children-Protocol
 
 # Set the location for your working directory (Where your scripts are saved)
 WorkingDirectory <- "C:/Users/lledesma.TIMES/Documents/GitHub/KBB/"
@@ -274,3 +274,5 @@ setdiff(Siblings$Child_ID, MatchedIDs$Child_ID)
 setdiff(Half_Siblings$Child_ID, MatchedIDs$Child_ID)
 setdiff(Cousins$Child_ID, MatchedIDs$Child_ID)
 
+# Check if someone given an ID was too young
+cbind(MatchedIDs$Date_of_Evaluation , MatchedIDs$Child_ID, MatchedIDs$ID, MatchedIDs$Child_age, "Given ID but they are less than 3!")[MatchedIDs$Child_age < 3,]

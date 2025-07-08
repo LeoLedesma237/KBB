@@ -141,6 +141,7 @@ source("Scoring/ASEBA_CBC_6_18.Scoring.R")
 source("Scoring/ZAT.Scoring.R")
 source("Scoring/Vineland_scoring.R")
 source("Scoring/Demographics_Scoring.R")
+source("Scoring/MIRT_CBCL_RV_PR_TR_LDS.R")
 source("MainScripts/MainScript_CreatingMasterSheetofScoredAssessments.R")
 
 
