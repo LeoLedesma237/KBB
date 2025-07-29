@@ -204,7 +204,7 @@ Inhibitory_Err <- AA_sum_scores %>%
   coord_flip() + theme_classic()
 
 (target_correct + Commission_Err) / (Ommission_Err + Inhibitory_Err) +
-  plot_annotation(title = "Total Sum of Correct Responses and Errors")
+  plot_annotation(title = "Total Sum of Correct Responses and Errors (AA)")
 
 
 

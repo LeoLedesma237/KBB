@@ -13,10 +13,6 @@ PSC <- read_excel(paste0(DataLocation,"FINAL_DS/Behavioral/Adults/PSC.xlsx"))
 
 # Note: no demographics required since no age groups will be created
 
-# Create a save pathway
-save.pathway_PSC <- paste(DataLocation,"FINAL_DS/Behavioral/Adults/PSC_IRT_Z.xlsx", sep="")
-
-
 ###########                                   #############
 ########### THE REST OF THE CODE IS AUTOMATIC #############
 ###########                                   #############

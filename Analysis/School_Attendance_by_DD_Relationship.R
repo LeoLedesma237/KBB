@@ -7,6 +7,7 @@ library(tidyverse)
 library(ggplot2)
 library(kableExtra)
 library(openxlsx)
+library(sjPlot) # plot_model() really good for plotting interactions
 
 # Set working directory and load data of interest
 setwd("~/KBB/Data/FINAL_DS/Screener/Matched_Siblings")
@@ -151,7 +152,9 @@ ID_df2 <- ID_df2 %>%
                      repeated_grade == "yes" ~ "Y",
                      TRUE ~ repeated_grade))
 
-
+# Remove some outliers real quick
+ID_df2 <- ID_df2 %>%
+  filter(school_years_attended <= 13 & highest_grade_achieved <= 12) # Removing bad data
 
 # Let's investigate schooling situation for each child and separate it by proband and ctrl category
 # Select variables of interest to investigate
@@ -159,9 +162,7 @@ ID_df3 <- ID_df2 %>%
   select(Relatedness, school_started_age:attending_school, ever_enrolled_in_school, missing_school_period_sick2, 
          missing_school_period_work2, time_doing_HW2, problems_at_school, skipped_grade, repeated_grade)
 
-# Remove some outliers real quick
-ID_df3 <- ID_df3 %>%
-  filter(school_years_attended <= 13 & highest_grade_achieved <= 12) # Removing bad data
+
 
 #####
 ###### Run a for loop to obtain descriptives for each variable
@@ -273,3 +274,265 @@ Home_Env_kiddos <- Home_Env_items2 %>%
   left_join(ID_df_org, by = "Child_ID")
 
 table(Home_Env_kiddos$Relatedness)
+
+
+
+
+#####
+############ Part 2: Qualifying (Disagregatting the data) categorical questions by sex and age (Plotting)
+#####
+
+# Create a vector with the variables of interest that we want to quality
+qualify_vector <- c("attending_school", 
+                    "ever_enrolled_in_school", 
+                    "problems_at_school",
+                    "skipped_grade",
+                    "repeated_grade")
+
+# Let's first start by visualizing the data
+# Subset the data
+ID_df4 <- ID_df2 %>%
+  select(Age, Sex, Relatedness)
+
+# Reintroduce the outcome
+for(ii in 1:length(qualify_vector)) {
+  
+  # Extract the current outcome of interest
+  ID_df4$y <- ID_df2[,qualify_vector[ii]][[1]]
+  
+  # Data cleaning 
+  ID_df5 <- ID_df4 %>%
+    mutate(y = case_when(
+      y == "Y" ~ 1,
+      y == "N" ~ 0,
+      TRUE ~ NA
+    )) %>%
+    filter(complete.cases(.),
+           Relatedness %in% c("Proband", "Sibling"))
+  
+  # Create a dataset with relatedness and sex being grouped as a single factor
+  group_dat <- ID_df5 %>%
+    mutate(Age = round(Age),
+           Age != 19 & Age != 2) %>%
+    mutate(Relatedness_Sex = paste0(Relatedness,":",Sex),
+           Age = factor(Age)) %>%
+    group_by(Age, Relatedness_Sex) 
+    
+  # Use the grouped dataset to calculate proportions of events for each level of the factor
+  prop_dat <- group_dat %>%
+    summarize(prop_y = mean(y)) %>%
+    mutate(Relatedness = ifelse(grepl("Proband", Relatedness_Sex), "Proband", "Sibling"),
+           Sex = ifelse(grepl("female", Relatedness_Sex), "female", "male")) 
+  
+  # Use the grouped dataset to calculate frequency of events for each level of the factor
+  freq_dat <-  group_dat %>%
+    summarize(freq_y = length(y))
+    
+  # Plot the proportions of successful events by age, sex, and relatedness status
+  current_plot <- prop_dat %>%
+    ggplot(aes(x = Age, y = prop_y, group = Relatedness_Sex, color = Sex, linetype = Relatedness)) +
+    geom_point(size = 1.2) +
+    geom_line(size = 1.2) +
+    facet_wrap(~Sex) +
+    scale_color_manual(values = c("male" = "black", "female" = "grey")) +
+    scale_linetype_manual(values = c("Proband" = "dashed", "Sibling" = "solid")) +
+    scale_y_continuous(limits = c(0, 1.05), expand = c(0, 0)) +
+    geom_hline(yintercept = 0.5, color = "blue", linetype = "dashed", size = 1) +
+    labs(y = qualify_vector[ii]) +
+    theme_classic() +
+    theme(
+      axis.title.x = element_text(size = 14),  # x-axis title font size
+      axis.title.y = element_text(size = 14),  # y-axis title font size
+      axis.text.x = element_text(size = 10),   # x-axis tick label font size
+      axis.text.y = element_text(size = 13),   # y-axis tick label font size
+      strip.text = element_text(size = 14)     # Increase facet label font size
+    )
+  
+  plot(current_plot)
+  
+  # Generate a table with the number of children within each of the age, sex, proband combinations
+  current_tab <- xtabs(freq_y ~ Relatedness_Sex + Age, freq_dat) %>%
+    as.data.frame.matrix() %>%
+    mutate(Total = rowSums(.)) %>%
+    kbl(caption = paste0("Frequeny of Children for ",qualify_vector[ii], " data")) %>%
+    kable_classic(full_width = F)
+  
+  print(current_tab)
+}
+
+
+
+#####
+############ Part 3: Qualifying (Disagregatting the data) categorical questions by sex and age (Plotting AGAIN)
+#####
+
+
+# Reintroduce the outcome
+for(ii in 1:length(qualify_vector)) {
+  
+  # Extract the current outcome of interest
+  ID_df4$y <- ID_df2[,qualify_vector[ii]][[1]]
+  
+  # Data cleaning 
+  ID_df5 <- ID_df4 %>%
+    mutate(y = case_when(
+      y == "Y" ~ 1,
+      y == "N" ~ 0,
+      TRUE ~ NA
+    )) %>%
+    filter(complete.cases(.),
+           Relatedness %in% c("Proband", "Sibling"))
+  
+  # Create a dataset with relatedness and sex being grouped as a single factor
+  ID_df5 <- ID_df5 %>%
+    mutate(Relatedness_Sex = paste0(Relatedness,":",Sex))
+  
+  # Plot the proportions of successful events by age, sex, and relatedness status
+  current_plot <- ID_df5 %>%
+    ggplot(aes(x = Age, y = y, group = Relatedness_Sex, color = Sex, linetype = Relatedness)) +
+    geom_point(size = 1.2) +
+    geom_smooth(se = FALSE, size = 1.4)  +
+    facet_wrap(~Sex) +
+    scale_color_manual(values = c("male" = "black", "female" = "grey")) +
+    scale_linetype_manual(values = c("Proband" = "dashed", "Sibling" = "solid")) +
+    scale_y_continuous(limits = c(0, 1.05), expand = c(0, 0)) +
+    geom_hline(yintercept = 0.5, color = "blue", linetype = "dashed", size = 1) +
+    labs(y = qualify_vector[ii]) +
+    theme_classic() +
+    theme(
+      axis.title.x = element_text(size = 14),  # x-axis title font size
+      axis.title.y = element_text(size = 14),  # y-axis title font size
+      axis.text.x = element_text(size = 10),   # x-axis tick label font size
+      axis.text.y = element_text(size = 13),   # y-axis tick label font size
+      strip.text = element_text(size = 14)     # Increase facet label font size
+    )
+  
+  plot(current_plot)
+  
+}
+
+
+#####
+########### Running Logistic Regressions Part 1: Identifying the best model
+#####
+
+# Cleaned data list
+cleaned_dat <- list()
+
+for(ii in 1:length(qualify_vector)) {
+  
+  # Extract the current outcome of interest
+  ID_df4$y <- ID_df2[,qualify_vector[ii]][[1]]
+  
+  # Data cleaning 
+  ID_df5 <- ID_df4 %>%
+    mutate(y = case_when(
+      y == "Y" ~ 1,
+      y == "N" ~ 0,
+      TRUE ~ NA
+    )) %>%
+    filter(complete.cases(.),
+           Relatedness %in% c("Proband", "Sibling"))
+  
+  # Change the contrast to the Relatedness variable
+  ID_df5$Relatedness <- factor(ID_df5$Relatedness)
+  ID_df5$Relatedness <- relevel(ID_df5$Relatedness, "Sibling")
+  
+  # Center age
+  ID_df5$Age_c <- c(scale(ID_df5$Age, center = T, scale = F))
+  
+  # Save this cleaned dataset for later usage
+  cleaned_dat[[ii]] <- ID_df5
+  
+  # Run several logistic regressions
+  mod1 <- glm(y ~ Relatedness + Sex + Age_c, family = "binomial", data = ID_df5)
+  mod2 <- update(mod1, . ~ . + Relatedness:Age_c)
+  mod3 <- update(mod2, . ~ . + Relatedness:Sex)
+  mod4 <- update(mod1, . ~ . + Relatedness*Sex*Age_c)
+  
+  # Identify the best model using model comparison
+  anova_ouput <- anova(mod1, mod2, mod3, mod4, test = "Chisq")
+  
+  # Print out the results
+  cat("\n\n\nFor Outcome:",qualify_vector[ii], "\n\n")
+  print(anova_ouput)
+}
+
+
+# The best models for each school outcome of interests (Age is not centered)
+# Model for School Attendance
+attend_mod <- glm(y ~ Relatedness + Sex + Age_c + Relatedness:Age_c, family = "binomial", 
+                  data = filter(cleaned_dat[[1]], Age >= 3 & Age <= 19))
+
+summary(attend_mod_quad <- update(attend_mod, . ~ . + I(Age_c^2)))
+anova(attend_mod, attend_mod_quad, test = "Chisq") # The quadratic is better
+round(cbind(OR = exp(coef(attend_mod_quad)) , exp(confint(attend_mod_quad))),2)
+plot_model(attend_mod_quad, type = "pred", terms = c("Age_c [all]", "Relatedness")) + theme_classic() + labs(y = "School Attendance", title = "Predicted probabilities of School Attendance by Relatedness")
+
+# Model for Ever Enrolled in School
+enrolled_mod <- glm(y ~ Relatedness + Sex + Age_c + Relatedness:Age_c, family = "binomial", 
+                    data = filter(cleaned_dat[[2]], Age >= 3 & Age <= 19))
+
+summary(enrolled_mod_quad <- update(enrolled_mod, . ~ . + I(Age_c^2)))
+anova(enrolled_mod, enrolled_mod_quad, test = "Chisq") # The quadratic is better
+round(cbind(OR = exp(coef(enrolled_mod_quad)) , exp(confint(enrolled_mod_quad))),2)
+plot_model(enrolled_mod_quad, type = "pred", terms = c("Age_c [all]", "Relatedness")) + theme_classic() + labs(y = "Ever Enrolled", title = "Predicted probabilities of Ever Enrolled by Relatedness")
+
+# Model for Problems at School
+summary(probs_mod <- glm(y ~ Relatedness + Sex + Age_c, family = "binomial", 
+                         data = filter(cleaned_dat[[3]], Age >= 3 & Age <= 19)))
+round(cbind(OR = exp(coef(probs_mod)) , exp(confint(probs_mod))),2)
+plot_model(probs_mod, type = "pred", terms = c("Age_c [all]", "Relatedness")) + theme_classic() + labs(y = "School Problems", title = "Predicted probabilities of Problems at School by Relatedness")
+
+# Model for Skipped a Grade
+summary(skipped_mod <- glm(y ~ Relatedness + Sex + Age_c, family = "binomial", 
+                           data = filter(cleaned_dat[[4]], Age >= 3 & Age <= 19)))
+round(cbind(OR = exp(coef(skipped_mod)) , exp(confint(skipped_mod))),2)
+plot_model(skipped_mod, type = "pred", terms = c("Age_c [all]", "Relatedness")) + theme_classic() + labs(y = "Skipped a Grade", title = "Predicted probabilities of Skipping a Grade by Relatedness")
+
+# Model for Repeated a Grade
+summary(repeated_mod <- glm(y ~ Relatedness + Sex + Age_c, family = "binomial",, 
+                            data = filter(cleaned_dat[[5]], Age >= 3 & Age <= 19)))
+round(cbind(OR = exp(coef(repeated_mod)) , exp(confint(repeated_mod))),2)
+plot_model(repeated_mod, type = "pred", terms = c("Age_c [all]", "Relatedness")) + theme_classic() + labs(y = "Repeated a Grade", title = "Predicted probabilities of Repeating a Grade by Relatedness")
+
+
+
+# TEST for school attendace results since the effect of proband flipped for final mdoel
+#summary(attend_mod <- glm(y ~ Relatedness, family = "binomial", data = cleaned_dat[[1]]))
+#summary(attend_mod <- glm(y ~ Relatedness + Age, family = "binomial", data = cleaned_dat[[1]]))
+addmargins(xtabs(~ Relatedness + round(Age), cleaned_dat[[1]]), margin = 2)
+addmargins(round(prop.table(xtabs(~ Relatedness + round(Age), cleaned_dat[[1]]), margin = 1), 2), margin = 2) # More older children are probands!
+
+# Contingency Tables
+ever_enrolled_tab <- addmargins(xtabs(y ~ Sex + Age + Relatedness, mutate(cleaned_dat[[2]], Age = factor(round(Age)))), margin = 2)
+ever_skipped_tab <- addmargins(xtabs(y ~ Sex + Age  + Relatedness, mutate(cleaned_dat[[4]], Age = factor(round(Age)))), margin = 2)
+
+
+ever_enrolled_tab %>%
+  data.frame() %>%
+  filter(Age != 2 & Age != 19) %>%
+  pivot_wider(
+    names_from = Age, 
+    values_from = Freq, 
+    id_cols = c(Sex, Relatedness)
+  )
+
+
+ever_skipped_tab %>%
+  data.frame() %>%
+  filter(Age != 2 & Age != 19) %>%
+  pivot_wider(
+    names_from = Age, 
+    values_from = Freq, 
+    id_cols = c(Sex, Relatedness)
+  )
+
+
+# Testing model with polynomial relationship with age
+summary(attend_mod2 <- glm(y ~ Relatedness + Sex + poly(Age,2) + Relatedness:Age, family = "binomial", data = cleaned_dat[[1]]))
+round(cbind(OR = exp(coef(attend_mod2)) , exp(confint(attend_mod2))),2)
+plot_model(attend_mod2, type = "pred", terms = c("Age [all]", "Relatedness")) + theme_classic() + labs(y = "School Attendance", title = "Predicted probabilities of School Attendance by Relatedness")
+
+# Model comparison
+anova(attend_mod2, attend_mod, test = "Chisq")

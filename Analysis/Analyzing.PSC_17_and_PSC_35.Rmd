@@ -1166,9 +1166,141 @@ for(ii in 2:max_num){
 # Print out model information (right now just for 3 components)
 EFA_mod_list[["EFA Model 3"]]$loadings
 
+# Print loadings for EFA Model 3, showing only absolute loadings >= 0.47
+print(EFA_mod_list[["EFA Model 3"]]$loadings, cut = 0.47)
+
 # Print out model information (right now just for 4 components)
 #EFA_mod_list[["EFA Model 4"]]$loadings
 ```
+
+# Running a CFA for potentially a new configuration of the items
+```{r running a novel CFA}
+# Don't include:
+# PSC_31, PSC_7, PSC_9, PSC_14, PSC_3, PSC_20, PSC_21, PSC_23, PSC_24, PSC_30
+
+# Specifying a general model of the new items
+one_factor_model <- '
+
+  # Measurement Model general (fixed = 1; free = 24)
+  G =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_16 + PSC_29  + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_4 + PSC_8 + PSC_1 + PSC_2 + PSC_5 + PSC_6 + PSC_10 + PSC_12 + PSC_15 + PSC_17 + PSC_18 + PSC_25 + PSC_26 + PSC_28
+  
+  # Factor variance (fixed = 0; free = 1)
+  G ~~ G
+  
+  # p*(p-1)/2 = 25·24/2 = 300
+  # thresholds = 25·(3–1) = 50
+  # moments = 300 + 50 = 350
+  # free params = 24 loadings + 1 variance + 50 thresholds = 75
+  # df = 350 - 75 = 275
+'
+
+# Specify a 3 factor model of the new items
+three_factor_model <- '
+
+  # Measurement Model (fixed = 3; free = 22)
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_1 + PSC_2 + PSC_10 + PSC_12 + PSC_15
+  E =~ 1*PSC_16 + PSC_29  + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_4 + PSC_8 + PSC_25 + PSC_26 + PSC_28
+  S =~ 1*PSC_5 + PSC_6 + PSC_17 + PSC_18
+  
+  # Factor variance (fixed = 0; free = 3)
+  I ~~ I
+  E ~~ E
+  S ~~ S
+  
+  # Covariance of the factors (free = 3)
+  I ~~ E
+  E ~~ S
+  I ~~ S
+  
+  # p*(p-1)/2 = 25·24/2 = 300
+  # thresholds = 25·(3–1) = 50
+  # moments = 300 + 50 = 350
+  # free params = 22 loadings + 3 variance + 3 covariances + 50 thresholds = 78
+  # df = 350 - 78 = 272
+'
+
+# Specify a hierarchical model of the new items
+hierar_factor_model <- '
+
+  # Measurement Model (fixed = 3; free = 22)
+  I =~ 1*PSC_11 + PSC_13 + PSC_19 + PSC_22 + PSC_27 + PSC_1 + PSC_2 + PSC_10 + PSC_12 + PSC_15
+  E =~ 1*PSC_16 + PSC_29  + PSC_32 + PSC_33 + PSC_34 + PSC_35 + PSC_4 + PSC_8 + PSC_25 + PSC_26 + PSC_28
+  S =~ 1*PSC_5 + PSC_6 + PSC_17 + PSC_18
+  
+  # Second order measurement model (fixed = 0; free = 3)
+  G =~ NA*I + E + S
+  
+  # Factor variance (fixed = 1; free = 3)
+  I ~~ I
+  E ~~ E
+  S ~~ S
+  G ~~ 1*G
+  
+  # Covariance of the factors (fixed = 3)
+  I ~~ 0*E
+  E ~~ 0*S
+  I ~~ 0*S
+  
+  # p*(p-1)/2 = 25·24/2 = 300
+  # thresholds = 25·(3–1) = 50
+  # moments = 300 + 50 = 350
+  # free params = 22 loadings + 3 sec loadings + 3 variances + 50 thresholds = 78
+  # df = 350 - 78 = 272
+'
+
+
+# Fit the models
+one_factor_fit <- cfa(one_factor_model, data = PSC_items_only_6_16_ordered, estimator = "WLSMV", ordered = T)
+three_factor_fit <- cfa(three_factor_model, data = PSC_items_only_6_16_ordered, estimator = "WLSMV", ordered = T)
+hierar_factor_fit <- cfa(hierar_factor_model, data = PSC_items_only_6_16_ordered, estimator = "WLSMV", ordered = T)
+
+# View summaries separately
+#summary(one_factor_fit, fit.measures = TRUE, rsquare = TRUE)
+#summary(three_factor_fit, fit.measures = TRUE, rsquare = TRUE)
+#summary(hierar_factor_fit, fit.measures = TRUE, rsquare = TRUE)
+
+
+# Add this model to compare to the other models
+fit_list <- list(
+   general = one_factor_fit,
+   three_factor = three_factor_fit,
+   hierarchical = hierar_factor_fit
+)
+
+
+# Extract metrics from each model
+cfa_metrics <- get_cfa_metrics2(fit_list)
+
+# Print out the results
+round(cfa_metrics$fit_metrics,3) %>%
+  kbl() %>%
+  kable_classic(full_width = F)
+
+
+# Visualize the three factor model
+p <- semPaths(three_factor_fit, 
+         whatLabels = "std",        # Show standardized estimates
+         edge.label.cex = 1.4,       # Size of edge labels (loadings/errors)
+         sizeMan = 5,               # Makes indicator boxes LARGER (default=5)
+         sizeMan2 = 3,              # Controls height (smaller = taller boxes)
+         node.width = 1.8,          # Adjusts node width (wider boxes)
+         border.width = 1.4,        # Thickness of box borders
+         sizeLat = 5,
+         label.cex = 1.3,             # Size of text inside boxes
+         edge.color = "black",      # All lines black
+         edge.width = 1.4,          # Thickness of arrows
+         curve = 2.3,              # Curvature of double-headed arrows
+         rotation = 4,             # Rotate layout
+         intercepts = FALSE,       # Hide intercept triangles
+         thresholds = FALSE,        # Hide threshold triangles
+         mar = c(5, 12, 5, 8),     # Margins (D, L, U, R)
+         shapeMan = "rectangle",   # Ensures boxes are rectangular
+         aspect = 2                # Adjust aspect ratio (higher = wider)
+)
+
+plot(p)
+```
+
 
 
 # What to do with the other 18 items?
