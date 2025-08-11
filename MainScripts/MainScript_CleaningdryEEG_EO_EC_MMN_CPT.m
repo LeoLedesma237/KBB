@@ -14,6 +14,10 @@
 % PCs
 KBB = 'C:\Users\KBB DATA ENTRY\Documents\';
 
+% Set up information for R
+rExecutable = '"C:\Program Files\R\R-4.2.2\bin\Rscript.exe"';
+LibraryDir = 'C:\Users\lledesma.TIMES\AppData\Local\Programs\R\R-4.2.2\library';
+
 % Set pathway to run EEGLAB
 EEGLAB_Path = append(KBB, 'MATLAB\eeglab_current\eeglab2024.0');
 addpath(EEGLAB_Path)
@@ -32,10 +36,6 @@ addpath(EEGFUN3_path)
 addpath(EEGFUN4_path)
 addpath(GenFunctions_path)
 addpath(Functions_path)
-
-% Set up information for R
-rExecutable = '"C:\Program Files\R\R-4.2.2\bin\Rscript.exe"';
-LibraryDir = 'C:\Users\lledesma.TIMES\AppData\Local\Programs\R\R-4.2.2\library';
 
 
 %%%%%%%%%% Copy Files from the Server to the Local PC %%%%%%%%%%%%%%%
@@ -221,7 +221,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%% Clean the ERP data %%%%%%%%%%%%%%%%%%%%%%%
 % Set up some parameters for each ERP condition
-rawRepDir = {'03_MMN_Inscapes\', '04_CPT_Inscapes\'}; % RAW_DATA and REPORT
+rawRepDir2 = {'03_MMN_Inscapes\', '04_CPT_Inscapes\'}; % RAW_DATA and REPORT
 cleanERPDir = {'03_MMN_Inscapes\01_Cleaned_ERP_Data\',...  % MODIFIED_DS
                      '04_CPT_Inscapes\01_Cleaned_ERP_Data\'}; 
 
@@ -235,9 +235,9 @@ for ii = 1:length(cleanERPDir)
     end
 
     % Set up pathways 
-    EEG_Pathway = append(KBB, 'KBB\Data\RAW_DATA\', rawRepDir{ii});
+    EEG_Pathway = append(KBB, 'KBB\Data\RAW_DATA\', rawRepDir2{ii});
     EEG_save_path = append(KBB, 'KBB\Data\MODIFIED_DS\', cleanERPDir{ii});
-    EEG_csv_save_path = append(KBB, 'KBB\Data\REPORTS\', rawRepDir{ii});
+    EEG_csv_save_path = append(KBB, 'KBB\Data\REPORTS\', rawRepDir2{ii});
     batchSize = 15; 
 
     % Generate the folders (if they already exists then nothing happens)
@@ -393,21 +393,20 @@ end
 
 
 
-
 %%%%%%%%%%%%% Combining Individual Reports into Main Ones %%%%%%%%%%%%%%%%%%
 % Create an array to store the main_QC_Dry_name
 main_QC_dry_name = {};
 
 % Set parameters
-Destinations = [rsEEGDestination ERPDestiation];
+Destinations = [rawRepDir rawRepDir2];
 
 for ii = 1:length(Destinations)
     % Setting pathways to where reports are saved for each task 
     Name = replace(Destinations{ii},'\','');
-    main_QC_dry_name{ii} = append(KBB, 'KBB\Data\REPORTS\', Name, '.xlsx');
     EEG_csv_save_path = append(KBB, 'KBB\Data\REPORTS\', Destinations{ii});
-    
-    % Organize the EEG QC reports
+    main_QC_dry_name{ii} = append(KBB, 'KBB\Data\REPORTS\', Name, '.xlsx');
+     
+    % Load in QC Reports and Bind Them Into One File
     T1 = organizing_QC(EEG_csv_save_path, 'dryEEG.csv');
     T2 = struct2log(preprocParams);
     
@@ -415,6 +414,7 @@ for ii = 1:length(Destinations)
     writetable(T1, main_QC_dry_name{ii});
     writecell(T2, main_QC_dry_name{ii}, 'Sheet', 'Sheet2');
 end
+
 
 %%%%%%%%%%%% Categorize Recordings as Good or Bad %%%%%%%%%%%%%%%%
 % Create arrays to keep the outputs
