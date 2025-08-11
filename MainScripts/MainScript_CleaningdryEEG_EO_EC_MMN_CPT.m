@@ -15,8 +15,9 @@
 KBB = 'C:\Users\KBB DATA ENTRY\Documents\';
 
 % Set up information for R
-rExecutable = '"C:\Program Files\R\R-4.2.2\bin\Rscript.exe"';
-LibraryDir = 'C:\Users\lledesma.TIMES\AppData\Local\Programs\R\R-4.2.2\library';
+rExecutable = '"C:\Program Files\R\R-4.3.1\bin\Rscript.exe"';
+%LibraryDir = 'C:\Users\lledesma.TIMES\AppData\Local\Programs\R\R-4.2.2\library';
+LibraryDir = 'C:\Users\KBB DATA ENTRY\AppData\Local\R\win-library\4.5';
 
 % Set pathway to run EEGLAB
 EEGLAB_Path = append(KBB, 'MATLAB\eeglab_current\eeglab2024.0');
