@@ -265,6 +265,10 @@ MatchedIDs %>%
 # Any overall summary missing?
 sum(is.na(Final.Data$Overall.Summary))
 
+# Identify where summary is missing
+Final.Data %>%
+  filter(is.na(Overall.Summary))
+
 # Are there any Children_ID in the Final_ID_Tracker.xlsx tabs and NOT in the MatchedID tab (Must be 0)
 # Remove the (old) half sibling matches from the Half-Sibling data
 Half_Siblings <- Half_Siblings %>%

@@ -50,7 +50,7 @@ LibraryDir = 'C:\Users\lledesma.TIMES\AppData\Local\Programs\R\R-4.2.2\library';
 
 %%%%%%%%%%%%%%%%%%%%%%%% Clean the rsEEG data %%%%%%%%%%%%%%%%%%%%%%%
 % Load in the dry-EEG preprocessing parameters (works for rsEEG and ERP)
-rsEEGParameters 
+DryEEGParameters 
 
 % Set up some parameters for each condition
 rawRepDir = {'01_Eyes_Open_Inscapes\', '02_Eyes_Closed\'}; % RAW_DATA and REPORT
@@ -227,13 +227,6 @@ cleanERPDir = {'03_MMN_Inscapes\01_Cleaned_ERP_Data\',...  % MODIFIED_DS
 
 for ii = 1:length(cleanERPDir)
 
-    % Pick which parameters to read in
-    if ii == 1
-        MMNParameters
-    else
-        CPTParameters
-    end
-
     % Set up pathways 
     EEG_Pathway = append(KBB, 'KBB\Data\RAW_DATA\', rawRepDir{ii});
     EEG_save_path = append(KBB, 'KBB\Data\MODIFIED_DS\', cleanERPDir{ii});
@@ -299,7 +292,7 @@ rScript2 = append(KBB, 'GitHub\KBB\Preprocessing\GeneratingMMNPlots.R');
 PlotDir2 = '03_MMN_Inscapes\04_Plotted_MMN\';
 
 % Set up pathways
-inputdir = append(KBB, 'KBB\Data\MODIFIED_DS\03_MMN_Inscapes\03_ERP_CSVs\');  
+inputdir = append(KBB, 'KBB\Data\MODIFIED_DS\', chhzpwrDestination{1});  
 outputdir = append(KBB, 'KBB\Data\MODIFIED_DS\', PlotDir2);
 
 % Convert the forward slashes into back slashes
@@ -321,75 +314,25 @@ command = sprintf('%s %s "%s" "%s" "%s"', ...
 % Call the R script
 [status, cmdout] = system(command);
 if status == 0
-    disp('MMN plots were generated successfully');
+    disp('rsEEG plots were generated successfully');
 else
     disp('Error running R script');
     disp(cmdout);
 end
 
 
-%%%%%%%%%%%%%%%%%%%%% Generate ERPs for the CPT %%%%%%%%%%%%%%%%%%%%%%%
-
-% Set up pathways 
-EEG_Pathway = append(KBB, 'KBB\Data\MODIFIED_DS\', cleanERPDir{2});
-EEG_Bin_Path = append(KBB, 'KBB\Data\MODIFIED_DS\04_CPT_Inscapes\02_Bin_Information\');
-EEG_ERP_csv_save_path = append(KBB, 'KBB\Data\MODIFIED_DS\04_CPT_Inscapes\03_ERP_CSVs\');
-
-% Set up parameters
-CPT_filenames = load_EEG_names(EEG_Pathway ,'.set', 'no');
-EEG_Bin_Name = 'CPT_Bin.txt';
-
-% Generate the folders (if they already exists then nothing happens)
-mkdir(EEG_Bin_Path);
-mkdir(EEG_ERP_csv_save_path);
-
-parfor ii = 1:length(CPT_filenames)
-    current_CPT_filename = CPT_filenames{ii};
-    % Extract the correct ERPs and save them as a .csv
-    CPT_ProcessingERP(current_CPT_filename, EEG_Pathway, EEG_Bin_Path, EEG_Bin_Name, EEG_ERP_csv_save_path)
-
-end
 
 
-%%%%%%%%%%%%%%%%%%%% Plotting the CPT ERPs %%%%%%%%%%%%%%%%%%%%%%%
 
-% This is being done through an .R script that we are calling here
-% Additionally inputs from MATLAB will appear in .R Global Environment
 
-% .R script location
-rScript3 = append(KBB, 'GitHub\KBB\Preprocessing\GeneratingCPTPlots.R');
 
-% Inputs that will be loaded within .R script
-PlotDir3 = '04_CPT_Inscapes\04_Plotted_CPT\';
 
-% Set up pathways
-inputdir = append(KBB, 'KBB\Data\MODIFIED_DS\04_CPT_Inscapes\03_ERP_CSVs\');  
-outputdir = append(KBB, 'KBB\Data\MODIFIED_DS\', PlotDir3);
 
-% Convert the forward slashes into back slashes
-LibraryDir = strrep(LibraryDir, '\', '/');
-currentSpecDatDir = strrep(inputdir, '\', '/');
-currentPlotDir = strrep(outputdir, '\', '/');
 
-% Generate the folders (if they already exists then nothing happens)
-mkdir(outputdir);
 
-% Construct the command with the pathway as an argument
-command = sprintf('%s %s "%s" "%s" "%s"', ... 
-                  rExecutable, ...
-                  rScript3, ...
-                  LibraryDir,...
-                  currentSpecDatDir,...
-                  currentPlotDir);
 
-% Call the R script
-[status, cmdout] = system(command);
-if status == 0
-    disp('CPT plots were generated successfully');
-else
-    disp('Error running R script');
-    disp(cmdout);
-end
+
+
 
 
 

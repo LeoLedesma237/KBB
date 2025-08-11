@@ -7,7 +7,7 @@ preprocParams.fileExt.eeg = '_cleaned_dry.set'; % Suffix for processed EEG file
 preprocParams.fileExt.qc = '_QC_dry.csv';        % Suffix for QC report
 
 % == For ERPs === (not necessary for rsEEG)
-preprocParams.markerNames = {'S  1',  'S  2', 'S  3', 'S  4'};
+preprocParams.markerNames = {'S  1', 'S  2', 'S  3', 'S  4'};
 preprocParams.markerLatThresh = 1000;
 preprocParams.baselineLat = 100; % The very first marker type!
 preprocParams.postStiLat = 900; % The very last marker type!
