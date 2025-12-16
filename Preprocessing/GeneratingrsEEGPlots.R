@@ -10,9 +10,9 @@
 
 # Testing the objects
 # 
-# LibraryDir = 'C:/Users/lledesma.TIMES/AppData/Local/Programs/R/R-4.2.2/library'
-# SpecDatDir = 'C:/Users/lledesma.TIMES/Documents/KBB/Data/MODIFIED_DS/01_Eyes_Open_Inscapes/03_Spectrum_Data_for_Plotting/'
-# PlotDir = 'C:/Users/lledesma.TIMES/Documents/KBB/Data/MODIFIED_DS/01_Eyes_Open_Inscapes/04_Plotted_Spectrum/'
+# LibraryDir = 'C:/Users/KBB DATA ENTRY/AppData/Local/R/win-library/4.5'
+# SpecDatDir = 'C:/Users/KBB DATA ENTRY/Documents/KBB/Data/MODIFIED_DS/01_Eyes_Open_Inscapes/03_Spectrum_Data_for_Plotting/'
+# PlotDir = 'C:/Users/KBB DATA ENTRY/Documents/KBB/Data/MODIFIED_DS/01_Eyes_Open_Inscapes/04_Plotted_Spectrum/'
 
 # Retrieve command-line arguments
 args <- commandArgs(trailingOnly = TRUE)
