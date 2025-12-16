@@ -1,0 +1,409 @@
+---
+title: ""
+author: ""
+date: ""
+output: html_document
+params:
+  id: NA
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+```
+
+```{r pick the ID number}
+#params <- data.frame(id = 62)
+ID_num = params$id #41 #62 #params$id = a variable specified from a different 
+
+```
+
+
+```{r loading in all required data}
+# Set working directory to where your GitHub repository is
+DataLocation = "~/Documents/Github/KBB/"
+
+# Set working directory to where the final data is
+setwd('C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Behavioral')
+
+# Load in the full data
+full_data <- read_excel("full_data.xlsx")
+
+# drop any NAs in the dataset for Child_ID
+full_data <- drop_na(full_data, Child_ID)
+```
+
+
+```{r load in dd status data, warning=FALSE}
+# Set the location for where the ID tracker is saved and the other where the CFM data is saved
+DataLocation2 = "C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener/Matched_Siblings/"
+DataLocation3 = "C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener/"
+
+# Load tracker ID info
+setwd(DataLocation2)
+trackerID <- read_excel("Final_ID_Tracker.xlsx")
+
+# Load the CFM data
+setwd(DataLocation3)
+CFM <- read_excel("All Children.xlsx")
+
+# Some minor data cleaning (include IDENTIFIABLE INFORMATION)
+trackerID2 <- select(trackerID, full_child_ID = Child_ID, Child_ID = ID, Child_First_Name, Child_Last_Name, HOH_ID)
+CFM2 <- select(CFM, full_child_ID = Child_ID, KBB_CFM_DD_type)
+
+# Merge the datasets by child_ID
+CFM_ID <- trackerID2 %>%
+  full_join(CFM2, by = "full_child_ID") %>%
+  select(-full_child_ID)
+
+# Introduce this info into full data
+full_data <- full_data %>%
+  full_join(CFM_ID, "Child_ID")
+  
+# drop NA's in Child_ID
+full_data <- drop_na(full_data, Child_ID)
+```
+
+
+
+```{r load in the scored data specifically for this parent report}
+# Set working directory
+setwd("~/KBB/Data/FINAL_DS/Behavioral/Adults_Children_MIRT")
+
+# Load in the data
+CBCL3_6 <- read_excel("CBCL3_6.xlsx")
+CBCL6_18 <- read_excel("CBCL6_18.xlsx")
+RV <- read_excel("RV.xlsx")
+PR <- read_excel("PR.xlsx")
+TR <- read_excel("TR.xlsx")
+LDS <- read_excel("LDS.xlsx")
+
+```
+
+### KBB Project Parent Report
+
+**Please note: The following report shares information about your child’s seeing, hearing, mental health, language, and thinking abilities. The scores from these tests can point to potential problems but they are not diagnostic. Any problems indicated below should be followed up with more testing to confirm.**
+
+This is a report for the child:
+
+```{r, demographic information as Mei suggested,  results='asis', echo = FALSE}
+data <- full_data %>%
+  filter(Child_ID == ID_num)
+
+
+cat('\n - Child ID:', data$Child_ID, '\n')
+cat('\n - First Name:', data$Child_First_Name, '\n')
+cat('\n - Last Name:', data$Child_Last_Name, '\n')
+cat('\n - Age:',data$Age,'\n')
+cat('\n - Sex:',data$Sex,'\n')
+cat('\n - HOH ID:', data$HOH_ID, '\n')
+
+```
+
+
+
+```{r create a function to report standardized scores as a percentile results}
+# We decided on the following categories
+# Bottom 5% → "Lowest individuals."
+# 5% to 20% → "Below average individuals."
+# 20% to 80% → "Average individuals."
+# 80% to 95% → "Above average individuals."
+# Top 5% → "Highest individuals."
+
+ss_to_perctl_fun <- function(x) {
+  if (is.na(x)) {
+    return(NA_character_)  # Ensures NA is returned as a character
+  }
+  
+  if (x >= 1.645) {
+    return("Top 5% - Highest")
+  } else if (x >= 0.84) {
+    return("80-95% - Above average")
+  } else if (x >= -0.84) {
+    return("20-80% - Average")
+  } else if (x >= -1.645) {
+    return("5-20% - Below average")
+  } else {
+    return("Bottom 5% - Lowest")
+  }
+}
+
+
+
+```
+
+### Possible Areas of Developmental Disability
+
+Below we share whether there were any reported diﬃculties for the Child Functioning Module screener (CFM), which were the first questions asked before joining the study. We also report any risk for having epilepsy.
+
+
+```{r reporting potential difficulties in pretty font,  results='asis', echo = FALSE}
+# Report the CFM domains that at least some difficulty was reported
+Num_Diff <- data.frame(Domains = do.call(c, str_split(data$KBB_CFM_DD_type, "; ")))
+
+if(sum(is.na(Num_Diff)) == 1) {
+  
+  cat('\n - No difficulties were reported for the CFM \n')
+  
+} else {
+  
+  Num_Diff %>%
+    mutate(`Reported Difficulties` = "Yes") %>%
+    kbl() %>%
+    kable_minimal(full_width = F)
+  
+}
+
+if(data$Epilepsy == "Yes") {
+  cat('\n - A potential risk for having epilepsy \n')
+} else {
+  cat('\n - No potential risk for having epilepsy \n\n\n')
+  
+}
+
+
+
+```
+
+
+
+
+#### 1. Eyesight
+
+The score for **seeing ability** Is expressed as a fraction. The top number is the distance at which your child can see a letter or symbol. The bottom number is the distance at which the average child can see that same letter or symbol. Larger numbers at the bottom of the fraction means that your child has poorer vision.
+
+Summary Examples:
+
+- 20/16 = better than normal vision
+- 20/20 = normal vision
+- 20/25 = slightly worse than normal, but still functional
+- 20/40 = acceptable for daily activities, but not ideal
+- 20/100 = significant vision impairment
+- 20/200 and worse = legally blind or very poor vision
+
+```{r physical data eyes}
+# Obtain the variables of interest
+Eyes <- data %>%
+  select(Left.eye:Both.Eyes)
+
+# Rename the variables
+names(Eyes) <- c("Left Eye", "Right Eye", "Acceptable Status", "Both Eyes")
+
+# Print the tables
+Eyes %>%
+  kbl() %>%
+  kable_styling(full_width = F)
+
+```
+
+#### 2. Hearing
+
+The score for **hearing ability** represents decibels (dB; “loudness”), which indicates how loud the sound needs to be for the child to hear it, larger numbers mean there are more problems with hearing.
+
+
+Summary Examples:
+
+- -10 to -1 - better than normal hearing:
+- 0 to 20 dB - normal hearing:
+- 21 to 40 dB - mild hearing loss: may have trouble hearing soft sounds like whispers
+- 41 to 70 dB - moderate hearing loss: may have difficulty hearing normal conversations
+- 71 to 90 dB - severe hearing loss: may only hear loud speech or sound
+- 91 dB+ - profound hearing loss: may not be able to hear everyday sounds without hearing aids
+  
+
+```{r physical data hearing}
+# Extract variables for left hearing ability
+Ears_L <- data %>%
+  select(`1000Hz_dB` = `1000Hz_Left_dB`,
+         `2000Hz_dB` = `2000Hz_Left_dB`,
+         `4000Hz_dB` = `4000Hz_Left_dB`,) %>%
+  mutate(Ear = "Left")
+
+# Extract variables for right hearing ability
+Ears_R <- data %>%
+  select(`1000Hz_dB` = `1000Hz_Right_dB`,
+         `2000Hz_dB` = `2000Hz_Right_dB`,
+         `4000Hz_dB` = `4000Hz_Right_dB`) %>%
+  mutate(Ear = "Right")
+
+# Create a function for overall hearing ability
+hearing_ability_fun <- function(dat){
+  # Calculate a mean from the provided vars
+  RowMean = rowMeans(Ears_R[,1:3], na.rm = T)
+  
+  # Given it a rating
+  status <- case_when(
+    RowMean < 0 ~ "Better than typical",
+    RowMean <= 20 ~ "Typical hearing",
+    RowMean <= 40 ~ "Mild hearing loss",
+    RowMean <= 70 ~ "Moderate hearing loss",
+    RowMean <= 90 ~ "Severe hearing loss",
+    RowMean > 90 ~ "Extremly severe hearing loss")
+  
+  # Return the hearing status
+  return(status)
+}
+
+# Add this variable information
+Ears_L$Status <- hearing_ability_fun(Ears_L[,1:3])
+Ears_R$Status <- hearing_ability_fun(Ears_R[,1:3])
+
+# Bind information into one dataset
+Ears <- rbind(Ears_L, Ears_R) %>% select(Ear, everything())
+
+# Print out the table
+Ears %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+```
+
+#### 3. Assessments
+
+Scores for these tests (mental health, verbal ability, cognitive ability) are designed to give information about how the child did compared to other children in the study of a similar age. Below are the scores for your child for these diﬀerent assessments, the number of children your child was compared to, and a rank that tells you how well the child did compared to these other children.
+
+
+#### Mental Health: Emotional, Behavioral, and Social problems
+
+The ASEBA Child Behavior Checklist (CBCL) is a popular assessment of a child’s emotional, behavioral and social problems. There are two versions, one for children 3-6 years or age and another for older children aged 6-18 years. This assessment has more than 100 questions, where the frequency of a specific problem is reported as “not true”, “somewhat or sometimes true”, or “very true or often true”. Therefore, a **high score** on this assessment means the child has **more difficulty controlling their emotions or behaviors**. 
+
+
+```{r reporting ASEBA}
+# Check which ASEBA the child has data for
+if(sum(ID_num %in% CBCL3_6$Child_ID) != 0) {
+  id_CBCL3_6 <- filter(CBCL3_6, Child_ID == ID_num)
+  CBCL_score <- round(id_CBCL3_6$standardized_score,2)
+  CBCL_rank <-  ss_to_perctl_fun(CBCL_score)
+  CBCL_n <- id_CBCL3_6$group_n
+  
+  } else if(sum(ID_num %in% CBCL6_18$Child_ID) != 0){
+    id_CBCL6_18 <- filter(CBCL6_18, Child_ID == ID_num)
+    CBCL_score <- round(id_CBCL6_18$standardized_score,2)
+    CBCL_rank <-  ss_to_perctl_fun(CBCL_score)
+    CBCL_n <- id_CBCL6_18$group_n
+  
+  } else {
+    CBCL_score <- "NA"
+    CBCL_rank <-  "Data is Missing"
+    CBCL_n <- "NA"
+    
+}
+  
+# Report the results as a table
+cbind(`Number of Children` = CBCL_n, `Child Score` = CBCL_score, `Child Rank` = CBCL_rank) %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+  
+```
+
+
+#### Receptive Vocabulary
+
+**Receptive vocabulary** refers to a person’s ability to understand the words they hear or read. It reflects how well someone can comprehend spoken or written language, even if they do not actively use those words in their own speech or writing. High scores indicate the child is able to understand spoken words well while lower scores indicate difficulty with this. Lower scores could indicate struggling with following directions, reading comprehension, or general communication. **Low scores** could also indicate **language delay**, **learning disability**, or **hearing issues**.
+
+```{r reporting on receptive vocabulary}
+# Check for their data
+if(sum(ID_num %in% RV$Child_ID) != 0) {
+  id_RV <- filter(RV, Child_ID == ID_num)
+  RV_score <- round(id_RV$standardized_score,2)
+  RV_rank <-  ss_to_perctl_fun(RV_score)
+  RV_n <- id_RV$group_n
+  
+  } else {
+    RV_score <- "NA"
+    RV_rank <-  "Data is Missing"
+    RV_n <- "NA"
+    
+  }
+
+
+# Report the results as a table
+cbind(`Number of Children` = RV_n, `Child Score` = RV_score, `Child Rank` = RV_rank) %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+```
+
+
+#### General Cognitive Ability (Reasoning and Memory)
+
+Three assessments were used to capture cognitive ability in the child. These measures are **Pattern Reasoning**, **Triangles**, and **Letter & Digit Span**. Scores for each of these measures indicate how well they performed- with **higher scores representing better performance**. 
+
+- **Pattern Reasoning**: This is an indicator of your child’s logical thinking; it requires the child to recognize patterns, solve problems, and think logically about problems outside of their typical experiences.
+
+- **Triangles**: This is an indicator of your child’s visual spatial processing. It assesses their ability to mentally manipulate shapes and recognize geometric patterns.
+
+
+- **Letter & Digit Span**; This is a common measure of your child’s ability to hold and manipulate information in short-term memory. This is important for learning and problem solving.
+
+
+
+```{r scoring IQ measures}
+# Check for their data
+if(sum(ID_num %in% PR$Child_ID) != 0) {
+  id_PR <- filter(PR, Child_ID == ID_num)
+  PR_score <- round(id_PR$standardized_score,2)
+  PR_rank <-  ss_to_perctl_fun(PR_score)
+  PR_n <- id_PR$group_n
+  
+  } else {
+    PR_score <- "NA"
+    PR_rank <-  "Data is Missing"
+    PR_n <- "NA"
+    
+  }
+
+
+# Check for their data
+if(sum(ID_num %in% TR$Child_ID) != 0) {
+  id_TR <- filter(TR, Child_ID == ID_num)
+  TR_score <- round(id_TR$standardized_score,2)
+  TR_rank <-  ss_to_perctl_fun(TR_score)
+  TR_n <- id_TR$group_n
+  
+  } else {
+    TR_score <- "NA"
+    TR_rank <-  "Data is Missing"
+    TR_n <- "NA"
+    
+  }
+
+
+
+# Check for their data
+if(sum(ID_num %in% LDS$Child_ID) != 0) {
+  id_LDS <- filter(LDS, Child_ID == ID_num)
+  LDS_score <- round(id_LDS$standardized_score,2)
+  LDS_rank <-  ss_to_perctl_fun(LDS_score)
+  LDS_n <- id_LDS$group_n
+  
+  } else {
+    LDS_score <- "NA"
+    LDS_rank <-  "Data is Missing"
+    LDS_n <- "NA"
+    
+  }
+
+# Generate a table with all of this information
+cog_dat <- data.frame(x1 = c(PR_n, TR_n, LDS_n),
+                      x2 = c(PR_score, TR_score, LDS_score),
+                      x3 = c(PR_rank, TR_rank, LDS_rank))
+
+# Rename the dataset
+names(cog_dat) <- c("Number of Children", "Child Score", "Child Rank")
+rownames(cog_dat) <- c("Pattern Reasoning", "Triangles", "Letter & Digit Span")
+
+# Report the results as a table
+cog_dat %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+
+```

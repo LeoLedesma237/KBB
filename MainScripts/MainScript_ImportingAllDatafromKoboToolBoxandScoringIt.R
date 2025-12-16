@@ -126,6 +126,7 @@ Sys.sleep(2)
 
 
 # Score the data
+source("Scoring/MissingRawData_Scoring.R")
 source("Scoring/CFM2_4.Scoring.R")
 source("Scoring/CFM5_17.Scoring.R")
 source("Scoring/CFM.Before.Matching.EEG.Eligibility.R")

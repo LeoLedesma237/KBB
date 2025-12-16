@@ -1,0 +1,486 @@
+---
+title: ""
+author: ""
+date: ""
+output: html_document
+---
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+```
+
+```{r pick the ID number}
+ID_num = 62 #41 #62 
+
+```
+
+
+```{r loading in all required data}
+# Set working directory to where your GitHub repository is
+DataLocation = "~/Documents/Github/KBB/"
+
+# Set working directory to where the final data is
+setwd('C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Behavioral')
+
+# Load in the full data
+full_data <- read_excel("full_data.xlsx")
+
+# drop any NAs in the dataset for Child_ID
+full_data <- drop_na(full_data, Child_ID)
+```
+
+```{r load in dd status data}
+# Set the location for where the ID tracker is saved and the other where the CFM data is saved
+DataLocation2 = "C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener/Matched_Siblings/"
+DataLocation3 = "C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Screener/"
+
+# Load tracker ID infor
+setwd(DataLocation2)
+trackerID <- read_excel("Final_ID_Tracker.xlsx")
+
+# Load the CFM data
+setwd(DataLocation3)
+CFM <- read_excel("All Children.xlsx")
+
+# Some minor data cleaning
+trackerID2 <- select(trackerID, full_child_ID = Child_ID, Child_ID = ID)
+CFM2 <- select(CFM, full_child_ID = Child_ID, KBB_CFM_DD_type)
+
+# Merge the datasets by child_ID
+CFM_ID <- trackerID2 %>%
+  full_join(CFM2, by = "full_child_ID") %>%
+  select(-full_child_ID)
+
+# Introdude this info into full data
+full_data <- full_data %>%
+  full_join(CFM_ID, "Child_ID")
+  
+# drop NA's in Child_ID
+full_data <- drop_na(full_data, Child_ID)
+```
+
+```{r create groups by age}
+# Arbitrary groups
+# 2-4;
+# 5-8;
+# 9-12; 
+# 13-15;
+# 16-19 
+
+full_data <- full_data %>%
+  mutate(age_group = case_when(
+     Age >= 2 & Age < 5 ~ "g3_4",
+     Age >= 5 & Age < 9 ~ "g5_8",
+     Age >= 9 & Age < 13 ~ "g9_12",
+     Age >= 13 & Age < 16 ~ "g13_15",
+     Age >= 16 & Age < 19 ~ "g16_19",
+     TRUE ~ "ERROR"
+  ))
+
+# table(full_data$age_group)
+
+# Drop any ERROR (kids have not have data collected yet)
+full_data <- filter(full_data, age_group != "ERROR")
+```
+
+
+```{r obtain zscores for each task for each group}
+full_data_z <- full_data %>%
+  group_by(age_group) %>%
+  mutate(KBB_CFM_DD_type,
+         Epilepsy,
+         PSC_Performance_z = c(scale(PSC_Performance)),
+         CBC3_6_emotionally_reactive_z = c(scale(CBC3_6_emotionally_reactive)),
+         CBC3_6_anxious_depressed_z = c(scale(CBC3_6_anxious_depressed)),
+         CBC3_6_somatic_complaints_z = c(scale(CBC3_6_somatic_complaints)),
+         CBC3_6_withdrawn_z = c(scale(CBC3_6_withdrawn)),
+         CBC3_6_sleep_problems_z = c(scale(CBC3_6_sleep_problems)),
+         CBC3_6_attention_problems_z = c(scale(CBC3_6_attention_problems)),
+         CBC3_6_aggressive_behaviors_z = c(scale(CBC3_6_aggressive_behaviors)),
+         CBC3_6_other_problems_z = c(scale(CBC3_6_other_problems)),
+         CBC3_6_Internalizing_z = c(scale(CBC3_6_Internalizing)),
+         CBC3_6_Externalizing_z = c(scale(CBC3_6_Externalizing)),
+         CBC3_6_Total_Prob_z = c(scale(CBC3_6_Total_Prob)),
+         CBC3_6_depressive_problems_z = c(scale(CBC3_6_depressive_problems)),
+         CBC3_6_anxiety_problems_z = c(scale(CBC3_6_anxiety_problems)),
+         CBC3_6_autism_spectrum_problems_z = c(scale(CBC3_6_autism_spectrum_problems)),
+         CBC3_6_attention_deficit_hyperactivity_problems_z = c(scale(CBC3_6_attention_deficit_hyperactivity_problems)),
+         CBC3_6_opositional_defiant_problems_z = c(scale(CBC3_6_opositional_defiant_problems)),
+         CBC6_18_anxious_depressed_z = c(scale(CBC6_18_anxious_depressed)),
+         CBC6_18_withdrawn_depressed_z = c(scale(CBC6_18_withdrawn_depressed)),
+         CBC6_18_somatic_complaints_z = c(scale(CBC6_18_somatic_complaints)),
+         CBC6_18_social_problems_z = c(scale(CBC6_18_social_problems)),
+         CBC6_18_thought_problems_z = c(scale(CBC6_18_thought_problems)),
+         CBC6_18_attention_problems_z = c(scale(CBC6_18_attention_problems)),
+         CBC6_18_ruleBreaking_behavior_z = c(scale(CBC6_18_ruleBreaking_behavior)),
+         CBC6_18_aggressive_behavior_z = c(scale(CBC6_18_aggressive_behavior)),
+         CBC6_18_other_problems_z = c(scale(CBC6_18_other_problems)),
+         CBC6_18_Internalizing_z = c(scale(CBC6_18_Internalizing)),
+         CBC6_18_Externalizing_z = c(scale(CBC6_18_Externalizing)),
+         CBC6_18_Total_Prob_z = c(scale(CBC6_18_Total_Prob)),
+         RV_Performance_z = c(scale(RV_Performance)),
+         PR_Performance_z = c(scale(PR_Performance)),
+         TR_Performance_z = c(scale(TR_Performance)),
+         LetDig_Performance_z = c(scale(LetDig_Performance))) %>%
+  ungroup()
+
+```
+
+### The KBB Project
+
+```{r, demographic information as Mei suggested,  results='asis', echo = FALSE}
+data <- full_data_z %>%
+  filter(Child_ID == ID_num)
+
+
+cat('\n - Individual report for ID:', ID_num, '\n')
+
+cat('\n - Age:',data$Age,'\n')
+cat('\n - Sex:',data$Sex,'\n')
+
+```
+
+
+
+```{r create a function to report zscore results}
+# We decided on the following categories
+# Bottom 5% → "Lowest individuals."
+# 5% to 20% → "Below average individuals."
+# 20% to 80% → "Average individuals."
+# 80% to 95% → "Above average individuals."
+# Top 5% → "Highest individuals."
+
+zscore_fun <- function(x) {
+  if (is.na(x)) {
+    return(NA_character_)  # Ensures NA is returned as a character
+  }
+  
+  if (x >= 1.645) {
+    return("Top 5% - Highest")
+  } else if (x >= 0.84) {
+    return("80-95% - Above average")
+  } else if (x >= -0.84) {
+    return("20-80% - Average")
+  } else if (x >= -1.645) {
+    return("5-20% - Below average")
+  } else {
+    return("Bottom 5% - Lowest")
+  }
+}
+
+
+```
+
+**Possible Areas of Developmental Disability According to the Screener**
+
+```{r reporting potential difficulties in pretty font,  results='asis', echo = FALSE}
+# Report the CFM domains that at least some difficulty was reported
+Num_Diff <- data.frame(Domains = do.call(c, str_split(data$KBB_CFM_DD_type, "; ")))
+
+if(sum(is.na(Num_Diff)) == 1) {
+  
+  cat('\n - No difficulties were reported for the CFM \n')
+  
+} else {
+  
+  Num_Diff %>%
+    mutate(`Reported Difficulties` = "Yes") %>%
+    kbl() %>%
+    kable_minimal(full_width = F)
+  
+}
+
+if(data$Epilepsy == "Yes") {
+  cat('\n - A potential risk for having epilepsy \n')
+} else {
+  cat('\n - No potential risk for having epilepsy \n')
+  
+}
+
+
+
+```
+
+
+
+
+#### 1. Eyesight
+
+The score for seeing ability Is expressed as a fraction. The top number is the distance at which your child can see a letter or symbol. The lower number is the distance at which the average child can see a letter or symbol. Larger values of this lower number indicate the child’s poorer vision.
+
+Summary Examples:
+
+- 20/16 = better than normal vision
+- 20/20 = normal vision
+- 20/25 = slightly worse than normal, but still functional
+- 20/40 = acceptable for daily activities, but not ideal
+- 20/100 = significant vision impairment
+- 20/200 and worse = legally blind or very poor vision
+
+```{r physical data eyes}
+Eyes <- data %>%
+  select(Left.eye:Both.Eyes)
+
+# Print the tables
+Eyes %>%
+  kbl() %>%
+  kable_styling(full_width = F)
+
+```
+
+#### 2. Hearing
+
+The score for hearing ability is expressed as decibels (dB; “loudness”) of a sound needed for the child to hear the sound; larger values indicate worse hearing.
+
+Summary Examples:
+
+- -10 to -1 - better than normal hearing:
+- 0 to 20 dB - normal hearing:
+- 21 to 40 dB - mild hearing loss: may have trouble hearing soft sounds like whispers
+- 41 to 70 dB - moderate hearing loss: may have difficulty hearing normal conversations
+- 71 to 90 dB - severe hearing loss: may only hear loud speech or sound
+- 91 dB+ - profound hearing loss: may not be able to hear everyday sounds without hearing aids
+  
+
+```{r physical data hearing}
+Ears_L <- data %>%
+  select(`1000Hz_dB` = `1000Hz_Left_dB`,
+         `2000Hz_dB` = `2000Hz_Left_dB`,
+         `4000Hz_dB` = `4000Hz_Left_dB`,) %>%
+  mutate(Ear = "Left")
+
+Ears_R <- data %>%
+  select(`1000Hz_dB` = `1000Hz_Right_dB`,
+         `2000Hz_dB` = `2000Hz_Right_dB`,
+         `4000Hz_dB` = `4000Hz_Right_dB`) %>%
+  mutate(Ear = "Right")
+
+Ears <- rbind(Ears_L, Ears_R) %>% select(Ear, everything())
+
+
+Ears %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+```
+
+### 3. Assessment
+
+Scores for each child on these tests are calculated to compare the child’s performance with the performance of other children in the study who are in the same age group. Below are the numbers of children in each age group used to calculate your child’s score.
+
+
+```{r, how many children in the group of comparison,  results='asis', echo = FALSE}
+# Extract all children within the current age group of the child
+current_age_group_all_data <- full_data %>%
+  filter(age_group == data$age_group) 
+
+# Keeps vars of interest that are not filled with NA's
+current_age_group_all_data2 <- current_age_group_all_data %>%
+  select(RV_StopRule_Num:LetDig_Performance)
+
+cat('\n - There are at most', nrow(current_age_group_all_data2), 'children in this age group for comparison \n')
+
+cat('\n - The score (called a z-score) indicates how far your child’s score is from their age group’s average score.\n' )
+```
+
+
+
+#### a. Mental Health - emotional, behavioral, and social problems
+
+The PSC measures a child’s general emotional, behavioral and psychosocial functioning. A higher score indicates a higher level of emotional or behavioral difficulties.    
+
+```{r reporting PSC }
+# Select PSC
+PSC <- data %>%
+  select(PSC_Performance_z) %>%
+  stack()
+
+# Make it prettier
+PSC2 <- PSC %>%
+  select(Measure = ind, Zscores = values) %>%
+  mutate(Zscores = round(Zscores,2))
+
+# Include interpretation
+PSC2$Interpretation <- sapply(PSC2$Zscores, zscore_fun)
+
+# Print out the results
+PSC2 %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+
+```
+
+```{r PSC violation}
+# The violation variable makes no sense for this task- only the NA variable does
+
+if(data$PSC_NA_num == 0) {
+  
+  paste0("There are no items missing for this score, thus this score is accurate")
+  
+} else {
+  
+  paste0("There are items missing for this score, thus this score may be inaccurate")
+  
+}
+```
+
+There are two surveys for the **CBC** that are administered depending on the age of the child. There is one for younger children CBC_3_6 and another for older children CBC_6_18. Similar to the PSC, these items also measure emotional, behavioral and social problems and have "not true", "somewhat or sometimes true", and "very true or often true" responses. Additionally, the higher the score in these measures, the more difficulty the child has with these emotional and behavioral domains. 
+
+Here are some definitions of what the different subscales mean:
+
+- Emotionally reactive: Easily upset, sensitive, mood swings.
+- Anxiety/Depression: Excessive worry, sadness, self-consciousness.
+- Withdrawn/Depressed: Avoids social interaction, lack of motivation.
+- Somatic Complaints: Unexplained physical issues (e.g., headaches, nausea).
+- Social problems: Trouble making friends, feeling lonely, being teased.
+- Thought problems: Strange ideas, hallucinations, obsessions, odd behaviors.
+- Attention problems: Easily distracted, trouble focusing, impulsivity (linked to ADHD).
+- Aggressive Behavior: Fighting, arguing, anger issues.
+- Rule breaking behavior: Lying, stealing, risky behavior.
+- **Internalizing problems (general)**: Issues directed inward  (ex: anxiety/depression/somatic)
+- **Externalizing problems (general)**: Issues of outward directed behaviors (ex: aggressive/rule-breaking)
+- **Total problems**: The sum of all issues, representing overall difficulties.
+
+
+```{r reporting ASEBA}
+# An index for NAs in CBC3_6 data; A high NA value means the child did the CBC6_18
+CBC_Criterium <- rowSums(is.na(select(data,CBC3_6_emotionally_reactive_z:CBC3_6_opositional_defiant_problems_z)))
+
+if (CBC_Criterium <= 4) {
+  mental <- data %>%
+    select(CBC3_6_emotionally_reactive_z:CBC3_6_opositional_defiant_problems_z)
+  
+  } else {
+    mental <- data %>%
+    select(CBC6_18_anxious_depressed_z:CBC6_18_Total_Prob_z)
+  
+  }
+
+# Convert the data into long format
+mental_stacked <- stack(mental)
+
+# Let's do some data cleaning
+mental_stacked2 <- mental_stacked %>%
+  select(Measure = ind, Zscores = values) %>%
+  mutate(Zscores = round(Zscores,2))
+
+# Include interpretation
+mental_stacked2$Interpretation <- sapply(mental_stacked2$Zscores, zscore_fun)
+
+# Print out the results
+mental_stacked2 %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+```
+
+
+```{r CBC violation checklist}
+# Same criterium as above!
+if (CBC_Criterium <= 4) {
+  CBC3_6_missing <- data$CBC3_6_NA_Num
+  
+  if (CBC3_6_missing == 0) {
+    paste0("CBC is reliable since there is no missing data for any item")
+  } else {
+    paste0("CBC may be unreliable since there is missing data for ", CBC3_6_missing, " items")
+  }
+  
+  
+} else {
+  
+  CBC6_18_missing <- data$CBC6_18_NA_Num
+  
+  if (CBC6_18_missing == 0) {
+    paste0("CBC is reliable since there is no missing data for any item")
+  } else {
+    paste0("CBC may be unreliable since there is missing data for ", CBC6_18_missing, " items")
+  }
+  
+}
+
+```
+### Receptive Vocabulary
+
+**Receptive vocabulary** refers to a person’s ability to understand words they hear or read. It reflects how well someone can comprehend spoken or written language, even if they don’t actively use those words in their own speech or writing. High scores indicate the child is able to understand spoken words well while lower scores indicate difficulty with this. Lower scores could indicate struggling with following directions, reading comprehension, or general communication. Low scores could also indicate **language delay**, **learning disability**, or **hearing issues**.
+
+```{r reporting on receptive vocabulary}
+# Select receptive vocabulary
+RecVoc <- data %>%
+  select(RV_Performance_z) %>%
+  stack()
+
+# Make it prettier
+RecVoc2 <- RecVoc %>%
+  select(Measure = ind, Zscores = values) %>%
+  mutate(Zscores = round(Zscores,2))
+
+# Include interpretation
+RecVoc2$Interpretation <- sapply(RecVoc2$Zscores, zscore_fun)
+
+# Print out the results
+RecVoc2 %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+```
+
+```{r recep vocab violation}
+# SR Violation does not apply to this dataset
+if(data$RV_NA_num == 0) {
+  
+  paste0("There are no items missing for this score, thus this score is accurate")
+  
+} else {
+  
+  paste0("There are items missing for this score, thus this score may be inaccurate")
+  
+}
+```
+
+### General Cognitive Ability (Reasoning and Memory)
+
+Three assessments were used to capture cognitive ability in the child. These measures are **Pattern Reasoning (PR)**, **Triangles (TR)**, and **Letter & Digit Span (LetDig)**. Scores for each of these measures indicate how well they performed- with higher scores representing better performance. 
+
+- **Pattern Reasoning**: It is an index of fluid intelligence- requires the child to recognize patterns, solve problems, and think logically without requiring experiences to guide them.
+
+- **Triangles**: It is an index of visual spatial processing. It Assesses the ability to mentally manipulate shapes and recognize geometric patterns. 
+
+- **Letter & Digit Span**; A common measure of working memory. It measures the ability to hold and manipulate information in short-term memory. It is essentially for learning and problem solving. 
+
+
+```{r scoring IQ measures}
+# Select the three IQ measures
+IQ_measures <- data %>%
+  select(PR_Performance_z:LetDig_Performance_z) %>%
+  stack()
+
+# Make it prettier
+IQ_measures2 <- IQ_measures %>%
+  select(Measure = ind, Zscores = values) %>%
+  mutate(Zscores = round(Zscores,2))
+
+# Include interpretation
+IQ_measures2$Interpretation <- sapply(IQ_measures2$Zscores, zscore_fun)
+
+# Print out the results
+IQ_measures2 %>%
+  kbl(caption = "") %>%
+  kable_styling(full_width = F)
+```
+
+
+```{r IQ measures violation}
+#full_data$PR_SR_Viola
+#full_data$TR_SR_Viola
+#full_data$LetDig_NA.Num
+
+```

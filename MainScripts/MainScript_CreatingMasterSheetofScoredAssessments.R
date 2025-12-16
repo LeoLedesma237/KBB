@@ -54,12 +54,13 @@ full_data <- PD2 %>%
   full_join(RV2, by = "Child_ID") %>%
   full_join(PR2, by = "Child_ID") %>%
   full_join(TR2, by = "Child_ID") %>%
-  full_join(LD2, by = "Child_ID")
+  full_join(LD2, by = "Child_ID") %>%
+  unique()
 
-# Drop any duplicates
+# Extract/Drop any duplicates
 duplicate_IDs <- full_data$Child_ID[duplicated(full_data$Child_ID)]
+dup_extract <- filter(full_data, Child_ID %in% duplicate_IDs)
 full_data <- filter(full_data, !Child_ID %in% duplicate_IDs)
 
 # Save the full data
 write.xlsx(x= full_data, file = save.pathway)
-

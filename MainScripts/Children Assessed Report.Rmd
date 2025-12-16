@@ -1,0 +1,105 @@
+---
+title: "Assessed Children Report"
+output: html_document
+---
+
+
+```{r setup, echo = F}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(comment = NULL)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+```{r loading in the packages, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(kableExtra)
+```
+
+
+This following report will be reading in several datasets that contained cleaned behavioral data. These include: 
+
+- KABC Triangles
+- Letter Digit Span 
+- Physical Data
+- Final ID Tracker (main excel file where all recruited children's information is stored). 
+
+We chose these assessments since they are given to everyone in our sample (3-18 years). Our main interest is to extract IDs from these datasets, combine them, and then keep the unique IDs from this concatenation, which will tell us how many kids have been assessed. These assessments do not have demographic nor group status (proband, sibling, half-sibling, cousin), so these IDs will be merged to a main excel file that does. Also before combining the IDs, we can limit the ones that do get combined by filtering those collected before a specific date (limitation date).
+
+**Disclaimer**: The numbers below are not going to be 100% accurate but they will be close. Reasons for this include:
+
+- duplicate IDs: They indicate that a child was mistakenly given an ID that has already been given to someone else, which will decrease the true number of children assessed.
+- data synching: All data are collected in the field using mutliple tablets. These tablets (all of them) need to be synched to the main KBB desktop (when internet is present) so that they can be accessed from KoboToolBox (the cloud). Failing/forgetting/not having the chance (still out in the field) to synch the data will decrease the true number of children assessed. 
+
+
+```{r loading in the data}
+# Set working directoy
+setwd("C:/Users/lledesma.TIMES/Documents/KBB/Data/FINAL_DS/Behavioral/Children")
+
+# Load in the data
+TR <- read_excel("Triangles.xlsx")
+LD <- read_excel("LettrDig.xlsx")
+PD <- read_excel("PhysicalData.xlsx")
+
+# Set working directory
+setwd("~/KBB/Data/FINAL_DS/Screener/Matched_Siblings")
+
+# Load in demographics
+Final <- read_excel("Final_ID_Tracker.xlsx")
+```
+
+```{r combining IDs and merging to demo}
+# Set limit date
+limit_date = '2025-10-31'
+
+# Filter data by limitation date (if any)
+TR <- TR %>%
+  filter(Date_of_Evaluation < limit_date)
+LD <- LD %>%
+  filter(Date_of_Evaluation < limit_date)
+PD <- PD %>%
+  filter(Date_of_Evaluation < limit_date)
+
+# Combine IDs
+assessed_ids <- unique(TR$Child_ID, LD$Child_ID, PD$Child_ID)
+
+# Subset Final Tracker by these ids
+assessed_Final <- Final %>%
+  filter(ID %in% assessed_ids)
+
+```
+
+
+```{r Generating Descriptives From the Data}
+# Extract variables of interest
+unique_HOH <- unique(assessed_Final$HOH_ID)
+
+# Obtain numbers for child group
+probands = sum(assessed_Final$Relatedness_ID == 1)
+pairs = sum(assessed_Final$Relatedness_ID == 2 | assessed_Final$Relatedness_ID == 3 | assessed_Final$Relatedness_ID == 4)
+
+cat("Limitation date was added:", limit_date, "\n")
+cat("Since the limitation date (if present), there were",length(assessed_ids),"children assessed from", length(unique_HOH),"unique households \n")
+cat("Total probands assessed:",probands, "and total controls assessed",pairs,"\n")
+
+# Create a new variable labeling Relatedness_ID
+assessed_Final <- assessed_Final %>%
+  mutate(Relatedness_ID_label = 
+           case_when(
+             Relatedness_ID == 1 ~ "Proband",
+             Relatedness_ID == 2 ~ "Sibling",
+             Relatedness_ID == 3 ~ "Half-Sibling",
+             Relatedness_ID == 4 ~ "Cousing"
+           ))
+
+# Print a table with this information
+related_T <- xtabs(~Relatedness_ID_label, assessed_Final)
+
+# Print nice table
+related_T %>%
+  kbl() %>%
+  kable_classic(full_width = F)
+```
